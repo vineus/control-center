@@ -21,6 +21,8 @@ class AutofixManager:
         self.settings = settings
         self.state = state
         self._running: set[str] = set()
+        self._tasks: dict[str, asyncio.Task] = {}
+        self.skipped: set[str] = set()  # PRs excluded from auto-fix
 
     async def check_and_fix(self, prs: list[PRStatus]) -> None:
         if not self.settings.autofix_enabled:
@@ -40,6 +42,8 @@ class AutofixManager:
         pr_key = pr.pr_key
         if pr_key in self._running:
             return None
+        if pr_key in self.skipped:
+            return None
 
         attempt = self.state.autofix_attempts.get(pr_key)
         if attempt and attempt.status == AutofixStatus.IN_PROGRESS:
@@ -57,14 +61,16 @@ class AutofixManager:
         if fix_type is None:
             fix_type = detect_fix_type(pr)
         if fix_type is None:
-            fix_type = FixType.CI_FAILURE  # default for manual triggers
+            fix_type = FixType.CI_FAILURE
 
         pr_key = pr.pr_key
+        self.skipped.discard(pr_key)  # un-skip if manually triggered
+
         if pr_key in self._running:
             return self.state.autofix_attempts[pr_key]
 
-        asyncio.create_task(self._run_fix(pr, fix_type))
-        # Wait briefly to return the in-progress attempt
+        task = asyncio.create_task(self._run_fix(pr, fix_type))
+        self._tasks[pr_key] = task
         await asyncio.sleep(0.1)
         return self.state.autofix_attempts.get(
             pr_key,
@@ -75,6 +81,28 @@ class AutofixManager:
                 started_at=datetime.now(timezone.utc),
             ),
         )
+
+    async def stop_fix(self, pr_key: str) -> None:
+        task = self._tasks.get(pr_key)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._running.discard(pr_key)
+        attempt = self.state.autofix_attempts.get(pr_key)
+        if attempt and attempt.status == AutofixStatus.IN_PROGRESS:
+            attempt.status = AutofixStatus.FAILED
+            attempt.error = "Stopped by user"
+            attempt.finished_at = datetime.now(timezone.utc)
+            self.state.autofix_attempts[pr_key] = attempt
+
+    def skip_pr(self, pr_key: str) -> None:
+        self.skipped.add(pr_key)
+
+    def unskip_pr(self, pr_key: str) -> None:
+        self.skipped.discard(pr_key)
 
     async def _run_fix(self, pr: PRStatus, fix_type: FixType) -> None:
         pr_key = pr.pr_key

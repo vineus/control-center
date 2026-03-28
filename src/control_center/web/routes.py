@@ -113,6 +113,7 @@ async def dashboard(request: Request):
             "reviews": _filter_reviews(state.review_requests, filters),
             "autofix": state.autofix_attempts,
             "autofix_enabled": request.app.state.settings.autofix_enabled,
+            "skipped_prs": request.app.state.autofix_manager.skipped,
         },
     )
 
@@ -128,6 +129,7 @@ async def my_prs_partial(request: Request):
             "prs": _filter_prs(state.my_prs, filters, state.autofix_attempts),
             "autofix": state.autofix_attempts,
             "autofix_enabled": request.app.state.settings.autofix_enabled,
+            "skipped_prs": request.app.state.autofix_manager.skipped,
         },
     )
 
@@ -197,3 +199,27 @@ async def trigger_autofix(repo: str, pr_number: int, request: Request):
 
     attempt = await manager.trigger_fix(pr)
     return {"status": attempt.status.value, "pr_key": attempt.pr_key}
+
+
+@router.post("/api/autofix/stop/{repo:path}/{pr_number}")
+async def stop_autofix(repo: str, pr_number: int, request: Request):
+    manager = request.app.state.autofix_manager
+    pr_key = f"{repo}#{pr_number}"
+    await manager.stop_fix(pr_key)
+    return {"status": "stopped", "pr_key": pr_key}
+
+
+@router.post("/api/autofix/skip/{repo:path}/{pr_number}")
+async def skip_autofix(repo: str, pr_number: int, request: Request):
+    manager = request.app.state.autofix_manager
+    pr_key = f"{repo}#{pr_number}"
+    manager.skip_pr(pr_key)
+    return {"status": "skipped", "pr_key": pr_key}
+
+
+@router.post("/api/autofix/unskip/{repo:path}/{pr_number}")
+async def unskip_autofix(repo: str, pr_number: int, request: Request):
+    manager = request.app.state.autofix_manager
+    pr_key = f"{repo}#{pr_number}"
+    manager.unskip_pr(pr_key)
+    return {"status": "unskipped", "pr_key": pr_key}
