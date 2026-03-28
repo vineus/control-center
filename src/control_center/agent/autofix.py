@@ -17,7 +17,7 @@ def prepare_worktree(repo: str, branch: str, settings: Settings) -> Path:
     base = Path(settings.repos_base_dir).expanduser()
     repo_dir = base / repo.replace("/", "_")
     worktrees_dir = base / "worktrees"
-    worktree_dir = worktrees_dir / f"{repo.replace('/', '_')}_{branch}"
+    worktree_dir = worktrees_dir / f"{repo.replace('/', '_')}_{branch.replace('/', '_')}"
 
     # Ensure directories exist
     worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -50,17 +50,25 @@ def prepare_worktree(repo: str, branch: str, settings: Settings) -> Path:
         if fetch.returncode != 0:
             raise RuntimeError(f"Fetch failed: {fetch.stderr}")
 
-        # Use detached HEAD to avoid "already checked out" errors
+        # Create worktree with a local branch tracking the remote
+        # First delete any stale local branch with the same name
+        _run(["git", "branch", "-D", branch], cwd=str(repo_dir))
         result = _run(
-            ["git", "worktree", "add", "--detach", str(worktree_dir), f"origin/{branch}"],
+            ["git", "worktree", "add", "-b", branch, str(worktree_dir), f"origin/{branch}"],
             cwd=str(repo_dir),
         )
         if result.returncode != 0:
-            raise RuntimeError(f"Worktree creation failed: {result.stderr}")
-
-    # Checkout the branch and pull latest
-    _run(["git", "checkout", branch], cwd=str(worktree_dir))
-    _run(["git", "pull", "--rebase", "origin", branch], cwd=str(worktree_dir), timeout=60)
+            # Fallback to detached HEAD if branch creation fails
+            result = _run(
+                ["git", "worktree", "add", "--detach", str(worktree_dir), f"origin/{branch}"],
+                cwd=str(repo_dir),
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"Worktree creation failed: {result.stderr}")
+    else:
+        # Worktree exists — pull latest
+        _run(["git", "fetch", "origin", branch], cwd=str(worktree_dir), timeout=60)
+        _run(["git", "reset", "--hard", f"origin/{branch}"], cwd=str(worktree_dir))
 
     return worktree_dir
 
