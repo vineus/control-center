@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from control_center.config import Settings
-from control_center.models import PRStatus
+from control_center.models import FixType, PRStatus
 
 logger = logging.getLogger(__name__)
 
@@ -16,106 +16,133 @@ def _run(cmd: list[str], cwd: str | None = None, timeout: int = 30) -> subproces
 def prepare_worktree(repo: str, branch: str, settings: Settings) -> Path:
     base = Path(settings.repos_base_dir).expanduser()
     repo_dir = base / repo.replace("/", "_")
+    worktree_dir = base / "worktrees" / f"{repo.replace('/', '_')}_{branch}"
 
     if not repo_dir.exists():
         logger.info("Cloning %s into %s", repo, repo_dir)
-        _run(["gh", "repo", "clone", repo, str(repo_dir)], timeout=120)
+        repo_dir.parent.mkdir(parents=True, exist_ok=True)
+        result = _run(["gh", "repo", "clone", repo, str(repo_dir)], timeout=120)
+        if result.returncode != 0:
+            raise RuntimeError(f"Clone failed: {result.stderr}")
 
-    worktree_dir = base / "worktrees" / f"{repo.replace('/', '_')}_{branch}"
     if not worktree_dir.exists():
-        _run(["git", "fetch", "origin", branch], cwd=str(repo_dir))
-        _run(["git", "worktree", "add", str(worktree_dir), f"origin/{branch}"], cwd=str(repo_dir))
+        _run(["git", "fetch", "origin", branch], cwd=str(repo_dir), timeout=60)
+        result = _run(
+            ["git", "worktree", "add", str(worktree_dir), f"origin/{branch}"],
+            cwd=str(repo_dir),
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Worktree creation failed: {result.stderr}")
+
+    # Ensure we're on the right branch and up to date
+    _run(["git", "checkout", branch], cwd=str(worktree_dir))
+    _run(["git", "pull", "--rebase", "origin", branch], cwd=str(worktree_dir), timeout=60)
 
     return worktree_dir
 
 
-def get_failure_context(pr: PRStatus) -> str:
-    parts = []
-
-    failed_checks = [c for c in pr.checks if c.conclusion == "FAILURE"]
-    if failed_checks:
-        parts.append(f"## Failed CI checks: {', '.join(c.name for c in failed_checks)}")
-        try:
-            result = _run(
-                [
-                    "gh",
-                    "run",
-                    "list",
-                    "--repo",
-                    pr.repo,
-                    "--branch",
-                    pr.head_ref,
-                    "--status",
-                    "failure",
-                    "--limit",
-                    "1",
-                    "--json",
-                    "databaseId",
-                ],
-                timeout=15,
-            )
-            if result.returncode == 0:
-                runs = json.loads(result.stdout)
-                if runs:
-                    run_id = str(runs[0]["databaseId"])
-                    log_result = _run(
-                        ["gh", "run", "view", run_id, "--repo", pr.repo, "--log-failed"],
-                        timeout=60,
-                    )
-                    if log_result.returncode == 0:
-                        log_text = log_result.stdout[-5000:]  # last 5k chars
-                        parts.append(f"## CI log (last 5000 chars):\n```\n{log_text}\n```")
-        except Exception:
-            logger.exception("Failed to fetch CI logs")
-
-    change_reviews = [r for r in pr.reviews if r.state == "CHANGES_REQUESTED"]
-    if change_reviews:
-        parts.append("## Review comments requesting changes:")
-        for r in change_reviews:
-            parts.append(f"- **{r.author}**: {r.body}")
-
-    return "\n\n".join(parts) if parts else "No specific failure context found."
+def cleanup_worktree(repo: str, worktree_path: Path, settings: Settings) -> None:
+    base = Path(settings.repos_base_dir).expanduser()
+    repo_dir = base / repo.replace("/", "_")
+    _run(["git", "worktree", "remove", str(worktree_path), "--force"], cwd=str(repo_dir))
 
 
-async def attempt_autofix(pr: PRStatus, settings: Settings) -> str:
-    """Attempt to auto-fix a PR using the Claude Agent SDK. Returns a status message."""
+def get_ci_failure_logs(pr: PRStatus) -> str:
     try:
-        from claude_agent_sdk import ClaudeAgentOptions, query
-    except ImportError:
-        return "claude-agent-sdk not installed. Install with: uv add claude-agent-sdk"
+        result = _run(
+            [
+                "gh",
+                "run",
+                "list",
+                "--repo",
+                pr.repo,
+                "--branch",
+                pr.head_ref,
+                "--status",
+                "failure",
+                "--limit",
+                "1",
+                "--json",
+                "databaseId",
+            ],
+            timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return "Could not fetch CI run list."
 
-    worktree_path = prepare_worktree(pr.repo, pr.head_ref, settings)
-    failure_context = get_failure_context(pr)
+        runs = json.loads(result.stdout)
+        if not runs:
+            return "No failed CI runs found."
 
-    prompt = f"""You are fixing a PR in {pr.repo} (#{pr.number}: {pr.title}).
+        run_id = str(runs[0]["databaseId"])
+        log_result = _run(
+            ["gh", "run", "view", run_id, "--repo", pr.repo, "--log-failed"],
+            timeout=60,
+        )
+        if log_result.returncode != 0:
+            return f"Could not fetch logs for run {run_id}: {log_result.stderr}"
 
-The following issues need to be addressed:
+        # Return last 8000 chars to stay within context limits
+        return log_result.stdout[-8000:]
+    except Exception as e:
+        logger.exception("Failed to fetch CI logs for %s#%d", pr.repo, pr.number)
+        return f"Error fetching CI logs: {e}"
 
-{failure_context}
+
+def detect_fix_type(pr: PRStatus) -> FixType | None:
+    if pr.mergeable == "CONFLICTING":
+        return FixType.MERGE_CONFLICT
+    if pr.ci_status.value == "failure" and not pr.is_draft:
+        return FixType.CI_FAILURE
+    if pr.is_draft:
+        return FixType.DRAFT
+    return None
+
+
+def build_prompt(pr: PRStatus, fix_type: FixType, ci_logs: str = "") -> str:
+    if fix_type == FixType.CI_FAILURE:
+        return f"""You are fixing CI failures in {pr.repo} (#{pr.number}: {pr.title}).
+Branch: {pr.head_ref}
+
+Here are the failing CI logs (last 8000 chars):
+```
+{ci_logs}
+```
 
 Instructions:
-1. Read the relevant code and understand the failures
-2. Make the minimal necessary fixes
-3. Run any available tests to verify
-4. Commit the fix with a clear message
-5. Push the changes
+1. Read the relevant code and understand what's failing
+2. Make the minimal fix needed to pass CI
+3. Run `make format` if a Makefile exists
+4. Commit with a message like: fix(ci): <describe what you fixed>
+5. Push with `git push`
 
-Do NOT make unnecessary changes beyond what's needed to fix the issues.
-"""
+Do NOT make unrelated changes. Focus only on making CI green."""
 
-    logger.info("Starting auto-fix for %s#%d in %s", pr.repo, pr.number, worktree_path)
+    if fix_type == FixType.MERGE_CONFLICT:
+        return f"""PR #{pr.number} in {pr.repo} ("{pr.title}") has merge conflicts with {pr.base_ref}.
+Branch: {pr.head_ref}
 
-    result_text = ""
-    async for message in query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(
-            cwd=str(worktree_path),
-            allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-            permission_mode="acceptEdits",
-            max_turns=30,
-        ),
-    ):
-        if hasattr(message, "result"):
-            result_text = message.result
+Instructions:
+1. Run: git fetch origin {pr.base_ref}
+2. Run: git rebase origin/{pr.base_ref}
+3. Resolve any merge conflicts by reading both versions and choosing the correct resolution
+4. Run `make format` if a Makefile exists
+5. Run: git push --force-with-lease
 
-    return result_text or "Auto-fix completed"
+Be careful with conflict resolution — understand the intent of both sides before resolving."""
+
+    if fix_type == FixType.DRAFT:
+        return f"""You are working on draft PR #{pr.number} in {pr.repo}: "{pr.title}".
+Branch: {pr.head_ref}, target: {pr.base_ref}
+
+Instructions:
+1. Read the existing code changes on this branch (use git diff origin/{pr.base_ref}...HEAD)
+2. Read any PR description for context (use: gh pr view {pr.number} --repo {pr.repo})
+3. Continue the implementation — fix issues, add missing pieces
+4. Run `make format` if a Makefile exists
+5. Commit and push your changes
+
+Do NOT mark the PR as ready — that is the user's decision.
+Do NOT make changes unrelated to the PR's purpose."""
+
+    raise ValueError(f"Unknown fix type: {fix_type}")

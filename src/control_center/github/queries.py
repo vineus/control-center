@@ -7,7 +7,9 @@ MY_PRS_QUERY = """
         title
         url
         isDraft
+        mergeable
         headRefName
+        baseRefName
         createdAt
         updatedAt
         repository {

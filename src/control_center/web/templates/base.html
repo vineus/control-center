@@ -68,6 +68,42 @@
         function clearFilters() { window.location.href = '/'; }
         let searchTimeout;
         function onSearchInput() { clearTimeout(searchTimeout); searchTimeout = setTimeout(applyFilters, 400); }
+
+        // Browser notifications
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+        let _prevAutofix = {};
+        function checkNotifications() {
+            fetch('/api/state').then(r => r.json()).then(d => {
+                const attempts = d.autofix_attempts || {};
+                for (const [key, af] of Object.entries(attempts)) {
+                    const prev = _prevAutofix[key];
+                    if (prev && prev !== af.status && af.status !== 'in_progress') {
+                        if (Notification.permission === 'granted') {
+                            const icon = af.status === 'succeeded' ? '✅' : '❌';
+                            new Notification(`${icon} Auto-fix ${af.status}`, {
+                                body: `${key} (${af.fix_type.replace('_',' ')})${af.error ? ': '+af.error.slice(0,80) : ''}`,
+                                tag: key,
+                            });
+                        }
+                    }
+                    _prevAutofix[key] = af.status;
+                }
+                // Notify on new "ready to merge" PRs
+                for (const pr of d.my_prs || []) {
+                    const k = 'ready_' + pr.repo + '#' + pr.number;
+                    if (pr.ready_to_merge && !_prevAutofix[k]) {
+                        if (Notification.permission === 'granted') {
+                            new Notification('🟢 Ready to merge', { body: pr.title, tag: k });
+                        }
+                    }
+                    if (pr.ready_to_merge) _prevAutofix[k] = true;
+                }
+            }).catch(() => {});
+        }
+        setInterval(checkNotifications, 30000);
+        setTimeout(checkNotifications, 2000); // initial seed
     </script>
 </head>
 <body class="bg-bg text-gray-200 min-h-screen">
@@ -87,6 +123,14 @@
                 {% endfor %}
             </select>
             {% endif %}
+            {# Autofix toggle #}
+            <button
+                id="autofix-toggle"
+                onclick="fetch('/api/autofix/toggle',{method:'POST'}).then(r=>r.json()).then(d=>{const b=document.getElementById('autofix-toggle');const on=d.autofix_enabled;b.innerHTML=on?'Agent: ON':'Agent: OFF';b.className=b.className.replace(/bg-\S+/g,'')+(on?' bg-green-500/20 text-green-400 border-green-500/30':' bg-white/5 text-gray-500 border-white/10')})"
+                class="px-2.5 py-1 rounded-full border text-[11px] font-medium transition
+                    {% if autofix_enabled is defined and autofix_enabled %}bg-green-500/20 text-green-400 border-green-500/30{% else %}bg-white/5 text-gray-500 border-white/10{% endif %}">
+                Agent: {% if autofix_enabled is defined and autofix_enabled %}ON{% else %}OFF{% endif %}
+            </button>
             {% if state and state.last_poll %}
             <span>{{ state.last_poll.strftime('%H:%M UTC') }}</span>
             {% endif %}

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -86,7 +85,9 @@ def _parse_my_prs(data: dict) -> list[PRStatus]:
                 checks=_parse_checks(last_commit),
                 review_status=_parse_review_decision(node.get("reviewDecision")),
                 reviews=reviews,
+                mergeable=node.get("mergeable", "UNKNOWN"),
                 is_draft=node.get("isDraft", False),
+                base_ref=node.get("baseRefName", "staging"),
                 created_at=datetime.fromisoformat(node["createdAt"]),
                 updated_at=datetime.fromisoformat(node["updatedAt"]),
             )
@@ -124,17 +125,9 @@ def _parse_review_requests(data: dict, username: str) -> list[ReviewRequest]:
 
 
 class GitHubPoller:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, state: DashboardState):
         self.settings = settings
-        self.state = DashboardState()
-
-    async def poll_loop(self):
-        while True:
-            try:
-                await asyncio.to_thread(self._poll_once)
-            except Exception:
-                logger.exception("Poll cycle failed")
-            await asyncio.sleep(self.settings.poll_interval_seconds)
+        self.state = state
 
     def _poll_once(self):
         logger.info("Polling GitHub for PR statuses...")

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +42,7 @@ def _get_filters(request: Request) -> dict:
         "review": request.query_params.get("review") or None,
         "search": request.query_params.get("search") or None,
         "draft": request.query_params.get("draft") or None,
+        "fixing": request.query_params.get("fixing") or None,
         "sort": request.query_params.get("sort") or "updated",
     }
 
@@ -50,11 +52,10 @@ def _sort_items(items: list, sort: str) -> list:
         return sorted(items, key=lambda x: x.created_at, reverse=True)
     if sort == "confidence" and items and hasattr(items[0], "merge_confidence"):
         return sorted(items, key=lambda x: x.merge_confidence, reverse=True)
-    # default: updated
     return sorted(items, key=lambda x: x.updated_at, reverse=True)
 
 
-def _filter_prs(prs: list, filters: dict) -> list:
+def _filter_prs(prs: list, filters: dict, autofix_attempts: dict | None = None) -> list:
     result = prs
     if filters["org"]:
         result = [p for p in result if p.repo.split("/")[0] == filters["org"]]
@@ -66,6 +67,12 @@ def _filter_prs(prs: list, filters: dict) -> list:
         result = [p for p in result if not p.is_draft]
     elif filters["draft"] == "only":
         result = [p for p in result if p.is_draft]
+    if filters["fixing"] and autofix_attempts:
+        result = [
+            p
+            for p in result
+            if p.pr_key in autofix_attempts and autofix_attempts[p.pr_key].status.value == "in_progress"
+        ]
     if filters["search"]:
         q = filters["search"].lower()
         result = [p for p in result if q in p.title.lower() or q in p.repo.lower() or q in p.head_ref.lower()]
@@ -87,9 +94,13 @@ def _filter_query_string(filters: dict) -> str:
     return "?" + "&".join(parts) if parts else ""
 
 
+def _get_state(request: Request):
+    return request.app.state.poller.state
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    state = request.app.state.poller.state
+    state = _get_state(request)
     filters = _get_filters(request)
     return templates.TemplateResponse(
         request,
@@ -98,22 +109,32 @@ async def dashboard(request: Request):
             "state": state,
             "filters": filters,
             "filter_qs": _filter_query_string(filters),
-            "prs": _filter_prs(state.my_prs, filters),
+            "prs": _filter_prs(state.my_prs, filters, state.autofix_attempts),
             "reviews": _filter_reviews(state.review_requests, filters),
+            "autofix": state.autofix_attempts,
+            "autofix_enabled": request.app.state.settings.autofix_enabled,
         },
     )
 
 
 @router.get("/partials/my-prs", response_class=HTMLResponse)
 async def my_prs_partial(request: Request):
-    state = request.app.state.poller.state
+    state = _get_state(request)
     filters = _get_filters(request)
-    return templates.TemplateResponse(request, "partials/my_prs.html", {"prs": _filter_prs(state.my_prs, filters)})
+    return templates.TemplateResponse(
+        request,
+        "partials/my_prs.html",
+        {
+            "prs": _filter_prs(state.my_prs, filters, state.autofix_attempts),
+            "autofix": state.autofix_attempts,
+            "autofix_enabled": request.app.state.settings.autofix_enabled,
+        },
+    )
 
 
 @router.get("/partials/reviews", response_class=HTMLResponse)
 async def reviews_partial(request: Request):
-    state = request.app.state.poller.state
+    state = _get_state(request)
     filters = _get_filters(request)
     return templates.TemplateResponse(
         request, "partials/review_requests.html", {"reviews": _filter_reviews(state.review_requests, filters)}
@@ -122,13 +143,31 @@ async def reviews_partial(request: Request):
 
 @router.get("/api/state")
 async def api_state(request: Request):
-    return request.app.state.poller.state
+    return _get_state(request)
 
 
 @router.post("/api/poll")
 async def trigger_poll(request: Request):
-    import asyncio
-
     poller = request.app.state.poller
     asyncio.create_task(asyncio.to_thread(poller._poll_once))
     return {"status": "polling"}
+
+
+@router.post("/api/autofix/toggle")
+async def toggle_autofix(request: Request):
+    settings = request.app.state.settings
+    settings.autofix_enabled = not settings.autofix_enabled
+    return {"autofix_enabled": settings.autofix_enabled}
+
+
+@router.post("/api/autofix/{repo:path}/{pr_number}")
+async def trigger_autofix(repo: str, pr_number: int, request: Request):
+    state = _get_state(request)
+    manager = request.app.state.autofix_manager
+
+    pr = next((p for p in state.my_prs if p.repo == repo and p.number == pr_number), None)
+    if pr is None:
+        return {"error": f"PR {repo}#{pr_number} not found"}
+
+    attempt = await manager.trigger_fix(pr)
+    return {"status": attempt.status.value, "pr_key": attempt.pr_key}

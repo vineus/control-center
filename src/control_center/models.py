@@ -18,6 +18,30 @@ class ReviewStatus(str, Enum):
     COMMENTED = "commented"
 
 
+class FixType(str, Enum):
+    CI_FAILURE = "ci_failure"
+    MERGE_CONFLICT = "merge_conflict"
+    DRAFT = "draft"
+
+
+class AutofixStatus(str, Enum):
+    IDLE = "idle"
+    IN_PROGRESS = "in_progress"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class AutofixAttempt(BaseModel):
+    pr_key: str
+    fix_type: FixType
+    status: AutofixStatus
+    started_at: datetime
+    finished_at: datetime | None = None
+    error: str | None = None
+    cost_usd: float | None = None
+    worktree_path: str | None = None
+
+
 class CheckRun(BaseModel):
     name: str
     status: str
@@ -36,15 +60,22 @@ class PRStatus(BaseModel):
     url: str
     repo: str
     head_ref: str
+    base_ref: str = "staging"
     author: str
     ci_status: CIStatus
     checks: list[CheckRun] = []
     review_status: ReviewStatus
     reviews: list[Review] = []
+    mergeable: str = "UNKNOWN"
     is_draft: bool = False
     created_at: datetime
     updated_at: datetime
     autofix_in_progress: bool = False
+
+    @computed_field
+    @property
+    def pr_key(self) -> str:
+        return f"{self.repo}#{self.number}"
 
     @computed_field
     @property
@@ -63,7 +94,17 @@ class PRStatus(BaseModel):
     @computed_field
     @property
     def ready_to_merge(self) -> bool:
-        return self.ci_status == CIStatus.SUCCESS and self.review_status == ReviewStatus.APPROVED and not self.is_draft
+        return (
+            self.ci_status == CIStatus.SUCCESS
+            and self.review_status == ReviewStatus.APPROVED
+            and not self.is_draft
+            and self.mergeable != "CONFLICTING"
+        )
+
+    @computed_field
+    @property
+    def needs_fix(self) -> bool:
+        return self.ci_status == CIStatus.FAILURE or self.mergeable == "CONFLICTING" or self.is_draft
 
 
 class ReviewRequest(BaseModel):
@@ -91,6 +132,7 @@ class ReviewRequest(BaseModel):
 class DashboardState(BaseModel):
     my_prs: list[PRStatus] = []
     review_requests: list[ReviewRequest] = []
+    autofix_attempts: dict[str, AutofixAttempt] = {}
     last_poll: datetime | None = None
     poll_error: str | None = None
 
