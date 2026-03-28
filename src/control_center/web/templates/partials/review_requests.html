@@ -6,7 +6,8 @@
 </div>
 {% endif %}
 {% for rr in reviews %}
-<div class="rounded-lg px-4 py-3 bg-surface-light transition-all duration-150
+<div data-pr-title="{{ rr.title | lower }}" data-pr-repo="{{ rr.repo | lower }}" data-pr-branch="{{ rr.author | lower }}"
+    class="rounded-lg px-4 py-3 bg-surface-light transition-all duration-150
     {% if rr.priority == 'high' %}card-glow-red{% elif rr.priority == 'medium' %}card-glow-yellow{% else %}card-glow-gray{% endif %}">
 
     {# Row 1: Title + priority #}

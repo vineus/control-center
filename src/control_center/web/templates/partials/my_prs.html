@@ -6,7 +6,8 @@
 </div>
 {% endif %}
 {% for pr in prs %}
-<div class="rounded-lg px-4 py-3 transition-all duration-150
+<div data-pr-title="{{ pr.title | lower }}" data-pr-repo="{{ pr.repo | lower }}" data-pr-branch="{{ pr.head_ref | lower }}"
+    class="rounded-lg px-4 py-3 transition-all duration-150
     {% if pr.ready_to_merge %}card-merge-ready bg-surface-light{% elif pr.ci_status.value == 'failure' %}card-glow-red bg-surface-light{% elif pr.ci_status.value == 'pending' %}card-glow-yellow bg-surface-light{% elif pr.ci_status.value == 'success' %}card-glow-green bg-surface-light{% else %}card-glow-gray bg-surface-light{% endif %}">
 
     {# Row 1: Title + status badges #}

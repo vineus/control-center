@@ -48,26 +48,35 @@
         .section-scroll::-webkit-scrollbar-thumb { background: #252f45; border-radius: 2px; }
     </style>
     <script>
-        function applyFilters() {
+        function _buildQs() {
             const params = new URLSearchParams();
             const org = document.getElementById('filter-org')?.value;
             const ci = document.getElementById('filter-ci')?.value;
             const review = document.getElementById('filter-review')?.value;
             const draft = document.getElementById('filter-draft')?.value;
             const sort = document.getElementById('filter-sort')?.value;
-            const search = document.getElementById('filter-search')?.value?.trim();
             if (org) params.set('org', org);
             if (ci) params.set('ci', ci);
             if (review) params.set('review', review);
             if (draft) params.set('draft', draft);
             if (sort && sort !== 'updated') params.set('sort', sort);
-            if (search) params.set('search', search);
-            const qs = params.toString();
+            return params.toString();
+        }
+        function applyFilters() {
+            const qs = _buildQs();
             window.location.href = '/' + (qs ? '?' + qs : '');
         }
         function clearFilters() { window.location.href = '/'; }
-        let searchTimeout;
-        function onSearchInput() { clearTimeout(searchTimeout); searchTimeout = setTimeout(applyFilters, 400); }
+        function onSearchInput() {
+            const q = (document.getElementById('filter-search')?.value || '').toLowerCase().trim();
+            document.querySelectorAll('[data-pr-title]').forEach(card => {
+                const title = card.dataset.prTitle || '';
+                const repo = card.dataset.prRepo || '';
+                const branch = card.dataset.prBranch || '';
+                const match = !q || title.includes(q) || repo.includes(q) || branch.includes(q);
+                card.style.display = match ? '' : 'none';
+            });
+        }
 
         // Browser notifications
         if ('Notification' in window && Notification.permission === 'default') {
