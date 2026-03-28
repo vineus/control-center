@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = Settings()
+    settings = Settings.load()
     state = DashboardState()
     poller = GitHubPoller(settings, state)
     autofix_manager = AutofixManager(settings, state)
@@ -66,5 +66,5 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "
 
 
 def run():
-    settings = Settings()
+    settings = Settings.load()
     uvicorn.run("control_center.main:app", host=settings.host, port=settings.port)
