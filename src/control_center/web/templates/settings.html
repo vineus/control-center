@@ -4,28 +4,25 @@
 <div class="max-w-2xl mx-auto">
     <div class="flex items-center justify-between mb-8">
         <h2 class="text-xs font-bold te-text uppercase tracking-widest">settings</h2>
-        <a href="/" class="btn text-[10px]">&larr; dashboard</a>
+        <div class="flex items-center gap-3">
+            <span id="save-status" class="text-[10px] te-faint"></span>
+            <a href="/" class="btn text-[10px]">&larr; dashboard</a>
+        </div>
     </div>
 
-    {% if saved is defined and saved %}
-    <div class="mb-6 p-3 border te-border-success te-success text-xs">
-        // settings saved
-    </div>
-    {% endif %}
-
-    <form method="POST" action="/settings" class="space-y-8">
+    <div class="space-y-8">
         {# GitHub #}
         <section>
             <h3 class="text-[10px] font-bold te-secondary uppercase tracking-widest mb-4 pb-2 border-b border-border">github</h3>
             <div class="space-y-4">
                 <div>
                     <label class="block text-[11px] te-muted mb-1">username</label>
-                    <input name="github_username" value="{{ settings.github_username }}" type="text"
+                    <input data-field="github_username" value="{{ settings.github_username }}" type="text"
                         class="w-full" placeholder="auto-detected from gh cli">
                 </div>
                 <div>
                     <label class="block text-[11px] te-muted mb-1">theme</label>
-                    <select name="theme" class="w-full" onchange="document.documentElement.dataset.theme=this.value; fetch('/api/theme/set?theme='+this.value,{method:'POST'})">
+                    <select data-field="theme" class="w-full">
                         <option value="dark" {% if settings.theme == "dark" %}selected{% endif %}>dark</option>
                         <option value="light" {% if settings.theme == "light" %}selected{% endif %}>light</option>
                         <option value="phosphor" {% if settings.theme == "phosphor" %}selected{% endif %}>phosphor — green terminal</option>
@@ -37,7 +34,7 @@
                 </div>
                 <div>
                     <label class="block text-[11px] te-muted mb-1">default organization</label>
-                    <input name="default_org" value="{{ settings.default_org }}" type="text"
+                    <input data-field="default_org" value="{{ settings.default_org }}" type="text"
                         class="w-full" placeholder="leave empty for all orgs">
                     <p class="text-[10px] te-faint mt-1">// prs filtered to this org by default</p>
                 </div>
@@ -49,7 +46,7 @@
             <h3 class="text-[10px] font-bold te-secondary uppercase tracking-widest mb-4 pb-2 border-b border-border">polling</h3>
             <div>
                 <label class="block text-[11px] te-muted mb-1">interval (seconds)</label>
-                <input name="poll_interval_seconds" value="{{ settings.poll_interval_seconds }}" type="number" min="30" max="3600"
+                <input data-field="poll_interval_seconds" value="{{ settings.poll_interval_seconds }}" type="number" min="30" max="3600"
                     class="w-32">
                 <p class="text-[10px] te-faint mt-1">// takes effect on next poll cycle</p>
             </div>
@@ -61,7 +58,7 @@
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
                     <label class="toggle">
-                        <input type="checkbox" name="autofix_enabled" {% if settings.autofix_enabled %}checked{% endif %}>
+                        <input type="checkbox" data-field="autofix_enabled" {% if settings.autofix_enabled %}checked{% endif %}>
                         <div class="toggle-track"><div class="toggle-knob"></div></div>
                     </label>
                     <span class="text-xs te-text">enable auto-fix agent</span>
@@ -69,7 +66,7 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-[11px] te-muted mb-1">model</label>
-                        <select name="autofix_model" class="w-full">
+                        <select data-field="autofix_model" class="w-full">
                             <option value="haiku" {% if settings.autofix_model == "haiku" %}selected{% endif %}>haiku</option>
                             <option value="sonnet" {% if settings.autofix_model == "sonnet" %}selected{% endif %}>sonnet</option>
                             <option value="opus" {% if settings.autofix_model == "opus" %}selected{% endif %}>opus</option>
@@ -77,31 +74,72 @@
                     </div>
                     <div>
                         <label class="block text-[11px] te-muted mb-1">budget per fix ($)</label>
-                        <input name="autofix_max_budget_usd" value="{{ settings.autofix_max_budget_usd }}" type="number" step="0.1" min="0.1" max="50"
+                        <input data-field="autofix_max_budget_usd" value="{{ settings.autofix_max_budget_usd }}" type="number" step="0.1" min="0.1" max="50"
                             class="w-full">
                     </div>
                     <div>
                         <label class="block text-[11px] te-muted mb-1">max turns</label>
-                        <input name="autofix_max_turns" value="{{ settings.autofix_max_turns }}" type="number" min="5" max="100"
+                        <input data-field="autofix_max_turns" value="{{ settings.autofix_max_turns }}" type="number" min="5" max="100"
                             class="w-full">
                     </div>
                     <div>
                         <label class="block text-[11px] te-muted mb-1">cooldown (minutes)</label>
-                        <input name="autofix_cooldown_minutes" value="{{ settings.autofix_cooldown_minutes }}" type="number" min="5" max="1440"
+                        <input data-field="autofix_cooldown_minutes" value="{{ settings.autofix_cooldown_minutes }}" type="number" min="5" max="1440"
                             class="w-full">
                     </div>
                 </div>
                 <div>
                     <label class="block text-[11px] te-muted mb-1">repos directory</label>
-                    <input name="repos_base_dir" value="{{ settings.repos_base_dir }}" type="text" class="w-full">
+                    <input data-field="repos_base_dir" value="{{ settings.repos_base_dir }}" type="text" class="w-full">
                 </div>
             </div>
         </section>
 
-        <div class="flex items-center gap-3 pt-4 border-t border-border">
-            <button type="submit" class="btn btn-accent">save settings</button>
-            <span class="text-[10px] te-faint">// ~/.control-center/config.toml</span>
+        <div class="pt-4 border-t border-border">
+            <span class="text-[10px] te-faint">// auto-saved to ~/.control-center/config.toml</span>
         </div>
-    </form>
+    </div>
 </div>
+
+<script>
+let _saveTimeout;
+function saveField(field, value) {
+    clearTimeout(_saveTimeout);
+    const status = document.getElementById('save-status');
+    status.textContent = 'saving...';
+    status.className = 'text-[10px] te-muted';
+
+    const data = {};
+    data[field] = value;
+
+    // Apply theme immediately
+    if (field === 'theme') document.documentElement.dataset.theme = value;
+
+    _saveTimeout = setTimeout(() => {
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        }).then(r => r.json()).then(() => {
+            status.textContent = 'saved';
+            status.className = 'text-[10px] te-success';
+            setTimeout(() => { status.textContent = ''; }, 2000);
+        }).catch(() => {
+            status.textContent = 'error';
+            status.className = 'text-[10px] te-error';
+        });
+    }, 300);
+}
+
+document.querySelectorAll('[data-field]').forEach(el => {
+    const field = el.dataset.field;
+    if (el.type === 'checkbox') {
+        el.addEventListener('change', () => saveField(field, el.checked));
+    } else if (el.tagName === 'SELECT') {
+        el.addEventListener('change', () => saveField(field, el.value));
+    } else {
+        el.addEventListener('input', () => saveField(field, el.type === 'number' ? Number(el.value) : el.value));
+    }
+});
+</script>
 {% endblock %}

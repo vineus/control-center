@@ -182,36 +182,30 @@ async def settings_page(request: Request):
     )
 
 
-@router.post("/settings", response_class=HTMLResponse)
-async def save_settings(request: Request):
+@router.post("/api/settings")
+async def save_settings_api(request: Request):
     settings = request.app.state.settings
-    form = await request.form()
+    data = await request.json()
 
-    settings.github_username = form.get("github_username", settings.github_username).strip()
-    settings.default_org = form.get("default_org", settings.default_org).strip()
-    settings.theme = form.get("theme", settings.theme).strip()
-    settings.poll_interval_seconds = int(form.get("poll_interval_seconds", settings.poll_interval_seconds))
-    settings.autofix_enabled = form.get("autofix_enabled") == "on"
-    settings.autofix_max_budget_usd = float(form.get("autofix_max_budget_usd", settings.autofix_max_budget_usd))
-    settings.autofix_max_turns = int(form.get("autofix_max_turns", settings.autofix_max_turns))
-    settings.autofix_cooldown_minutes = int(form.get("autofix_cooldown_minutes", settings.autofix_cooldown_minutes))
-    settings.autofix_model = form.get("autofix_model", settings.autofix_model).strip()
-    settings.repos_base_dir = form.get("repos_base_dir", settings.repos_base_dir).strip()
+    field_map = {
+        "github_username": str,
+        "default_org": str,
+        "theme": str,
+        "poll_interval_seconds": int,
+        "autofix_enabled": bool,
+        "autofix_max_budget_usd": float,
+        "autofix_max_turns": int,
+        "autofix_cooldown_minutes": int,
+        "autofix_model": str,
+        "repos_base_dir": str,
+    }
+
+    for key, cast in field_map.items():
+        if key in data:
+            setattr(settings, key, cast(data[key]))
 
     settings.save()
-
-    return templates.TemplateResponse(
-        request,
-        "settings.html",
-        {
-            "settings": settings,
-            "state": request.app.state.poller.state,
-            "filters": {},
-            "autofix_enabled": settings.autofix_enabled,
-            "theme": settings.theme,
-            "saved": True,
-        },
-    )
+    return {"status": "saved"}
 
 
 THEMES = ["dark", "light", "phosphor", "blueprint", "paper", "concrete", "amber"]
