@@ -26,6 +26,13 @@ GitHub PR monitor dashboard with auto-fix agent capabilities.
 - Search input: NEVER use `window.location.href` for search — causes page reloads and history spam
 - In-progress autofix can get stuck if SDK hangs — `reconcile_status()` force-stops tasks when PR no longer needs fixing
 - Never auto-mark draft PRs as ready (`gh pr ready`) — that's the user's decision
+- FastAPI `{repo:path}` routes are greedy — `/api/autofix/stop/{repo:path}/{pr_number}` captures `stop/` as part of repo. Use JSON body endpoints for actions instead
+- Stopping the Claude Agent SDK: `task.cancel()` does NOT kill the subprocess. Must `pgrep -f claude_agent_sdk/_bundled/claude` + `SIGTERM` to actually stop it
+- Stop endpoint must be synchronous (non-blocking) — don't `await task`, just cancel + kill + update state immediately
+- CSS themes: all colors must be CSS variables (`var(--bg)` etc.), never hardcoded hex. `:root` block must NOT come after `[data-theme]` blocks (overrides them by cascade)
+- Static CSS caching: use cache-busting query param on `style.css` link, or browsers show stale themes
+- Settings auto-save via `POST /api/settings` with JSON body — no form submission needed
+- After triggering autofix, reload page after 2s so the PR card re-renders with log section
 
 ## Structure
 - `src/control_center/github/` — GraphQL client, queries, polling loop
