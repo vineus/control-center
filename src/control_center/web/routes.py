@@ -150,8 +150,14 @@ async def api_state(request: Request):
 
 @router.post("/api/poll")
 async def trigger_poll(request: Request):
-    poller = request.app.state.poller
-    asyncio.create_task(asyncio.to_thread(poller._poll_once))
+    async def poll_and_reconcile():
+        poller = request.app.state.poller
+        manager = request.app.state.autofix_manager
+        await asyncio.to_thread(poller._poll_once)
+        state = _get_state(request)
+        await manager.reconcile_status(state.my_prs)
+
+    asyncio.create_task(poll_and_reconcile())
     return {"status": "polling"}
 
 
