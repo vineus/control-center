@@ -33,6 +33,10 @@ GitHub PR monitor dashboard with auto-fix agent capabilities.
 - Static CSS caching: use cache-busting query param on `style.css` link, or browsers show stale themes
 - Settings auto-save via `POST /api/settings` with JSON body — no form submission needed
 - After triggering autofix, reload page after 2s so the PR card re-renders with log section
+- CSS: inner `<span>` elements need `display: block` to respect `width`/`height` — common issue with progress bars and fills
+- Templates use `{% block filter_bar %}` and `{% block body_class %}` in base.html for per-page customization (e.g., settings hides filter bar)
+- Keyboard shortcuts defined in base.html: `/` search, `r` refresh, `t` cycle theme, `g+h` dashboard, `g+s` settings, `?` help overlay
+- Daemon mode: `control-center -d` (start), `stop`, `status`, `logs` — PID file at `~/.control-center/daemon.pid`, logs at `daemon.log`
 
 ## Structure
 - `src/control_center/github/` — GraphQL client, queries, polling loop
