@@ -92,6 +92,7 @@ class AutofixManager:
             # Prepare worktree (blocking I/O)
             worktree = await asyncio.to_thread(prepare_worktree, pr.repo, pr.head_ref, self.settings)
             attempt.worktree_path = str(worktree)
+            self.state.autofix_attempts[pr_key] = attempt  # update with path
             logger.info("Auto-fixing %s (%s) in %s", pr_key, fix_type.value, worktree)
 
             # Get CI logs if needed
@@ -102,21 +103,25 @@ class AutofixManager:
             # Build prompt
             prompt = build_prompt(pr, fix_type, ci_logs)
 
-            # Run Claude Agent SDK
+            # Run Claude Agent SDK with timeout
             cost = 0.0
-            async for message in query(
-                prompt=prompt,
-                options=ClaudeAgentOptions(
-                    cwd=str(worktree),
-                    allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
-                    permission_mode="bypassPermissions",
-                    max_turns=self.settings.autofix_max_turns,
-                    max_budget_usd=self.settings.autofix_max_budget_usd,
-                    model=self.settings.autofix_model,
-                ),
-            ):
-                if isinstance(message, ResultMessage):
-                    cost = getattr(message, "total_cost_usd", 0.0) or 0.0
+            try:
+                async with asyncio.timeout(600):  # 10 minute max
+                    async for message in query(
+                        prompt=prompt,
+                        options=ClaudeAgentOptions(
+                            cwd=str(worktree),
+                            allowed_tools=["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
+                            permission_mode="bypassPermissions",
+                            max_turns=self.settings.autofix_max_turns,
+                            max_budget_usd=self.settings.autofix_max_budget_usd,
+                            model=self.settings.autofix_model,
+                        ),
+                    ):
+                        if isinstance(message, ResultMessage):
+                            cost = getattr(message, "total_cost_usd", 0.0) or 0.0
+            except TimeoutError:
+                raise RuntimeError("Auto-fix timed out after 10 minutes")
 
             attempt.status = AutofixStatus.SUCCEEDED
             attempt.cost_usd = cost
