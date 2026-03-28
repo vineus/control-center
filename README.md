@@ -33,6 +33,21 @@ make dev
 
 Open http://localhost:8000
 
+### CLI options
+
+```
+control-center --help
+control-center --port 9000
+control-center --host 127.0.0.1 --port 3000
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-p`, `--port` | Port to listen on | from config or `8000` |
+| `--host` | Host to bind to | from config or `0.0.0.0` |
+
+CLI flags override config file values.
+
 ## Prerequisites
 
 - Python 3.12+
