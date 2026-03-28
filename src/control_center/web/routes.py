@@ -175,8 +175,9 @@ async def get_autofix_logs(pr_key: str, request: Request):
     return {"log": [e.model_dump() for e in attempt.log[-50:]], "status": attempt.status.value}
 
 
-@router.get("/partials/autofix-log/{pr_key:path}", response_class=HTMLResponse)
-async def autofix_log_partial(pr_key: str, request: Request):
+@router.get("/partials/autofix-log", response_class=HTMLResponse)
+async def autofix_log_partial(request: Request):
+    pr_key = request.query_params.get("key", "")
     state = _get_state(request)
     attempt = state.autofix_attempts.get(pr_key)
     log = attempt.log[-50:] if attempt else []

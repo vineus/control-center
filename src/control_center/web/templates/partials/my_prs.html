@@ -122,15 +122,13 @@
             <span class="copy-ok hidden text-green-400 text-[10px] shrink-0">Copied!</span>
         </div>
         {% endif %}
-        {% if af.log %}
         <button class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500 hover:text-gray-300 hover:bg-white/10 transition"
-            onclick="event.preventDefault(); event.stopPropagation(); const el=this.closest('div[class*=rounded-lg]').querySelector('.agent-log'); el.classList.toggle('hidden'); if(!el.classList.contains('hidden')){htmx.ajax('GET','/partials/autofix-log/{{ pr.pr_key }}',{target:el, swap:'innerHTML'})}">
+            onclick="event.preventDefault(); event.stopPropagation(); const el=this.closest('div[class*=rounded-lg]').querySelector('.agent-log'); el.classList.toggle('hidden'); if(!el.classList.contains('hidden')){htmx.ajax('GET','/partials/autofix-log?key={{ pr.pr_key | urlencode }}',{target:el, swap:'innerHTML'})}">
             Log
         </button>
-        {% endif %}
     </div>
-    <div class="agent-log hidden mt-2 max-h-48 overflow-y-auto rounded bg-black/30 px-3 py-2 border border-white/5"
-        {% if af.status.value == "in_progress" %}hx-get="/partials/autofix-log/{{ pr.pr_key }}" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
+    <div class="agent-log {% if af.status.value != 'in_progress' %}hidden{% endif %} mt-2 max-h-48 overflow-y-auto rounded bg-black/30 px-3 py-2 border border-white/5"
+        hx-get="/partials/autofix-log?key={{ pr.pr_key | urlencode }}" hx-trigger="every 5s" hx-swap="innerHTML">
     </div>
     {% endif %}
 
