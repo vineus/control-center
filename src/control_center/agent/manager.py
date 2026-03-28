@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, ToolUseBlock, query
 
 from control_center.agent.autofix import (
     build_prompt,
@@ -11,7 +11,7 @@ from control_center.agent.autofix import (
     prepare_worktree,
 )
 from control_center.config import Settings
-from control_center.models import AutofixAttempt, AutofixStatus, DashboardState, FixType, PRStatus
+from control_center.models import AgentLogEntry, AutofixAttempt, AutofixStatus, DashboardState, FixType, PRStatus
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,20 @@ class AutofixManager:
 
             # Run Claude Agent SDK with timeout
             cost = 0.0
+
+            def _log(msg: str) -> None:
+                attempt.log.append(
+                    AgentLogEntry(
+                        timestamp=datetime.now(timezone.utc),
+                        pr_key=pr_key,
+                        message=msg,
+                    )
+                )
+                # Keep log bounded
+                if len(attempt.log) > 200:
+                    attempt.log = attempt.log[-200:]
+
+            _log(f"Starting {fix_type.value} fix in {worktree}")
             try:
                 async with asyncio.timeout(600):  # 10 minute max
                     async for message in query(
@@ -118,9 +132,16 @@ class AutofixManager:
                             model=self.settings.autofix_model,
                         ),
                     ):
-                        if isinstance(message, ResultMessage):
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock) and block.text.strip():
+                                    _log(block.text[:300])
+                                elif isinstance(block, ToolUseBlock):
+                                    _log(f"[{block.name}] {str(block.input)[:200]}")
+                        elif isinstance(message, ResultMessage):
                             cost = getattr(message, "total_cost_usd", 0.0) or 0.0
             except TimeoutError:
+                _log("Timed out after 10 minutes")
                 raise RuntimeError("Auto-fix timed out after 10 minutes")
 
             attempt.status = AutofixStatus.SUCCEEDED

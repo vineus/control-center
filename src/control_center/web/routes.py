@@ -160,6 +160,25 @@ async def toggle_autofix(request: Request):
     return {"autofix_enabled": settings.autofix_enabled}
 
 
+@router.get("/api/autofix/logs/{pr_key:path}")
+async def get_autofix_logs(pr_key: str, request: Request):
+    state = _get_state(request)
+    attempt = state.autofix_attempts.get(pr_key)
+    if not attempt:
+        return {"log": [], "status": "idle"}
+    return {"log": [e.model_dump() for e in attempt.log[-50:]], "status": attempt.status.value}
+
+
+@router.get("/partials/autofix-log/{pr_key:path}", response_class=HTMLResponse)
+async def autofix_log_partial(pr_key: str, request: Request):
+    state = _get_state(request)
+    attempt = state.autofix_attempts.get(pr_key)
+    log = attempt.log[-50:] if attempt else []
+    return templates.TemplateResponse(
+        request, "partials/autofix_log.html", {"log": log, "pr_key": pr_key, "attempt": attempt}
+    )
+
+
 @router.post("/api/autofix/{repo:path}/{pr_number}")
 async def trigger_autofix(repo: str, pr_number: int, request: Request):
     state = _get_state(request)

@@ -31,6 +31,12 @@ class AutofixStatus(str, Enum):
     FAILED = "failed"
 
 
+class AgentLogEntry(BaseModel):
+    timestamp: datetime
+    pr_key: str
+    message: str
+
+
 class AutofixAttempt(BaseModel):
     pr_key: str
     fix_type: FixType
@@ -40,6 +46,7 @@ class AutofixAttempt(BaseModel):
     error: str | None = None
     cost_usd: float | None = None
     worktree_path: str | None = None
+    log: list[AgentLogEntry] = []
 
 
 class CheckRun(BaseModel):

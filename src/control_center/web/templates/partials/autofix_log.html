@@ -1,0 +1,12 @@
+{% if not log %}
+<div class="text-gray-600 text-xs py-4 text-center">No log entries yet</div>
+{% else %}
+<div class="space-y-1 font-mono text-[11px]">
+    {% for entry in log %}
+    <div class="flex gap-2 py-0.5">
+        <span class="text-gray-600 shrink-0 tabular-nums">{{ entry.timestamp.strftime('%H:%M:%S') }}</span>
+        <span class="{% if entry.message.startswith('[') %}text-blue-400{% else %}text-gray-400{% endif %} break-all">{{ entry.message }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
