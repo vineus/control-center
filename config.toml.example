@@ -5,6 +5,8 @@
 [github]
 # Your GitHub username (auto-detected from `gh` CLI on first run)
 username = ""
+# Default org to filter PRs (leave empty for all orgs)
+default_org = ""
 
 [server]
 host = "0.0.0.0"

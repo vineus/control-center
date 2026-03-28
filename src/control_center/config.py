@@ -16,6 +16,8 @@ DEFAULT_CONFIG = """\
 [github]
 # Your GitHub username (auto-detected from `gh` CLI if empty)
 username = "{username}"
+# Default org to filter PRs (leave empty for all orgs)
+default_org = ""
 
 [server]
 host = "0.0.0.0"
@@ -61,6 +63,7 @@ def _ensure_config() -> dict:
 
 class Settings(BaseSettings):
     github_username: str = ""
+    default_org: str = ""
     poll_interval_seconds: int = 180
     host: str = "0.0.0.0"
     port: int = 8000
@@ -86,6 +89,7 @@ class Settings(BaseSettings):
 
         file_values = {
             "github_username": gh.get("username", ""),
+            "default_org": gh.get("default_org", ""),
             "poll_interval_seconds": srv.get("poll_interval_seconds", 180),
             "host": srv.get("host", "0.0.0.0"),
             "port": srv.get("port", 8000),
@@ -99,3 +103,29 @@ class Settings(BaseSettings):
 
         # Env vars (CC_ prefix) override file values via pydantic-settings
         return cls(**{k: v for k, v in file_values.items() if v is not None and v != ""})
+
+    def save(self) -> None:
+        """Write current settings back to config file."""
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        content = f"""\
+# Control Center configuration
+
+[github]
+username = "{self.github_username}"
+default_org = "{self.default_org}"
+
+[server]
+host = "{self.host}"
+port = {self.port}
+poll_interval_seconds = {self.poll_interval_seconds}
+
+[autofix]
+enabled = {str(self.autofix_enabled).lower()}
+max_budget_usd = {self.autofix_max_budget_usd}
+max_turns = {self.autofix_max_turns}
+cooldown_minutes = {self.autofix_cooldown_minutes}
+model = "{self.autofix_model}"
+repos_base_dir = "{self.repos_base_dir}"
+"""
+        CONFIG_FILE.write_text(content)
+        logger.info("Config saved to %s", CONFIG_FILE)

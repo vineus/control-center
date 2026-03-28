@@ -102,6 +102,10 @@ def _get_state(request: Request):
 async def dashboard(request: Request):
     state = _get_state(request)
     filters = _get_filters(request)
+    # Apply default org if no org filter set and no other filters active
+    settings = request.app.state.settings
+    if not filters["org"] and settings.default_org:
+        filters["org"] = settings.default_org
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -159,6 +163,51 @@ async def trigger_poll(request: Request):
 
     asyncio.create_task(poll_and_reconcile())
     return {"status": "polling"}
+
+
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    settings = request.app.state.settings
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "settings": settings,
+            "state": request.app.state.poller.state,
+            "filters": {},
+            "autofix_enabled": settings.autofix_enabled,
+        },
+    )
+
+
+@router.post("/settings", response_class=HTMLResponse)
+async def save_settings(request: Request):
+    settings = request.app.state.settings
+    form = await request.form()
+
+    settings.github_username = form.get("github_username", settings.github_username).strip()
+    settings.default_org = form.get("default_org", settings.default_org).strip()
+    settings.poll_interval_seconds = int(form.get("poll_interval_seconds", settings.poll_interval_seconds))
+    settings.autofix_enabled = form.get("autofix_enabled") == "on"
+    settings.autofix_max_budget_usd = float(form.get("autofix_max_budget_usd", settings.autofix_max_budget_usd))
+    settings.autofix_max_turns = int(form.get("autofix_max_turns", settings.autofix_max_turns))
+    settings.autofix_cooldown_minutes = int(form.get("autofix_cooldown_minutes", settings.autofix_cooldown_minutes))
+    settings.autofix_model = form.get("autofix_model", settings.autofix_model).strip()
+    settings.repos_base_dir = form.get("repos_base_dir", settings.repos_base_dir).strip()
+
+    settings.save()
+
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "settings": settings,
+            "state": request.app.state.poller.state,
+            "filters": {},
+            "autofix_enabled": settings.autofix_enabled,
+            "saved": True,
+        },
+    )
 
 
 @router.post("/api/autofix/toggle")

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <h2 class="text-lg font-semibold text-white">Settings</h2>
+        <a href="/" class="text-xs text-gray-500 hover:text-gray-300 transition">&larr; Back to dashboard</a>
+    </div>
+
+    {% if saved is defined and saved %}
+    <div class="mb-6 px-4 py-2.5 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-xs">
+        Settings saved successfully.
+    </div>
+    {% endif %}
+
+    <form method="POST" action="/settings" class="space-y-6">
+        {# GitHub #}
+        <section class="rounded-lg bg-surface-light border border-white/5 p-5">
+            <h3 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">GitHub</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Username</label>
+                    <input name="github_username" value="{{ settings.github_username }}" type="text"
+                        class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50"
+                        placeholder="Auto-detected from gh CLI">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Default organization</label>
+                    <input name="default_org" value="{{ settings.default_org }}" type="text"
+                        class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50"
+                        placeholder="Leave empty for all orgs">
+                    <p class="text-[10px] text-gray-600 mt-1">PRs will be filtered to this org by default. You can still switch in the dashboard.</p>
+                </div>
+            </div>
+        </section>
+
+        {# Server #}
+        <section class="rounded-lg bg-surface-light border border-white/5 p-5">
+            <h3 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">Polling</h3>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1.5">Poll interval (seconds)</label>
+                <input name="poll_interval_seconds" value="{{ settings.poll_interval_seconds }}" type="number" min="30" max="3600"
+                    class="w-32 bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50">
+                <p class="text-[10px] text-gray-600 mt-1">How often to check GitHub for PR updates. Takes effect on next poll cycle.</p>
+            </div>
+        </section>
+
+        {# Auto-fix #}
+        <section class="rounded-lg bg-surface-light border border-white/5 p-5">
+            <h3 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">Auto-Fix Agent</h3>
+            <div class="space-y-4">
+                <div class="flex items-center gap-3">
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="autofix_enabled" class="sr-only peer" {% if settings.autofix_enabled %}checked{% endif %}>
+                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                    <span class="text-sm text-gray-300">Enable auto-fix agent</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">Model</label>
+                        <select name="autofix_model"
+                            class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50">
+                            <option value="haiku" {% if settings.autofix_model == "haiku" %}selected{% endif %}>Haiku (fast, cheap)</option>
+                            <option value="sonnet" {% if settings.autofix_model == "sonnet" %}selected{% endif %}>Sonnet (balanced)</option>
+                            <option value="opus" {% if settings.autofix_model == "opus" %}selected{% endif %}>Opus (powerful)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">Budget per fix ($)</label>
+                        <input name="autofix_max_budget_usd" value="{{ settings.autofix_max_budget_usd }}" type="number" step="0.1" min="0.1" max="50"
+                            class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">Max turns per fix</label>
+                        <input name="autofix_max_turns" value="{{ settings.autofix_max_turns }}" type="number" min="5" max="100"
+                            class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">Cooldown (minutes)</label>
+                        <input name="autofix_cooldown_minutes" value="{{ settings.autofix_cooldown_minutes }}" type="number" min="5" max="1440"
+                            class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent/50">
+                        <p class="text-[10px] text-gray-600 mt-1">Wait time before re-attempting a failed PR.</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">Repos base directory</label>
+                    <input name="repos_base_dir" value="{{ settings.repos_base_dir }}" type="text"
+                        class="w-full bg-surface border border-white/10 rounded-md px-3 py-2 text-sm text-gray-200 font-mono text-xs focus:outline-none focus:border-accent/50">
+                    <p class="text-[10px] text-gray-600 mt-1">Where git clones and worktrees are stored.</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                class="px-4 py-2 rounded-md bg-accent text-white text-sm font-medium hover:bg-blue-600 transition">
+                Save settings
+            </button>
+            <span class="text-[10px] text-gray-600">Saved to ~/.control-center/config.toml</span>
+        </div>
+    </form>
+</div>
+{% endblock %}
