@@ -5,7 +5,7 @@
 {% set ready_count = prs | selectattr("ready_to_merge") | list | length %}
 {% set failing_count = prs | selectattr("ci_status.value", "equalto", "failure") | list | length %}
 {% set changes_count = prs | selectattr("review_status.value", "equalto", "changes_requested") | list | length %}
-{% set fixing_count = autofix.values() | selectattr("status.value", "equalto", "in_progress") | list | length if autofix else 0 %}
+{% set fixing_count = [] %}{% for k, a in autofix.items() if a.status.value == "in_progress" %}{% set _ = fixing_count.append(1) %}{% endfor %}
 
 {% set f = filters if filters is defined else {} %}
 {% set is_ready = f.ci == 'success' and f.review == 'approved' %}
@@ -35,7 +35,7 @@
     <a href="{% if is_fixing %}/{% else %}/?fixing=true{% endif %}"
         class="stat-card rounded-lg px-4 py-3 border transition cursor-pointer
         {% if is_fixing %}bg-purple-500/15 border-purple-500/30 ring-1 ring-purple-500/20{% else %}bg-purple-500/5 border-purple-500/10 hover:bg-purple-500/10 hover:border-purple-500/20{% endif %}">
-        <div class="text-2xl font-bold text-purple-400">{{ fixing_count }}</div>
+        <div class="text-2xl font-bold text-purple-400">{{ fixing_count | length }}</div>
         <div class="text-[11px] text-purple-400/60 font-medium uppercase tracking-wider mt-0.5">Agent fixing</div>
     </a>
     <div class="stat-card rounded-lg px-4 py-3 bg-blue-500/5 border border-blue-500/10">

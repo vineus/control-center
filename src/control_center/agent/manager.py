@@ -88,39 +88,43 @@ class AutofixManager:
         )
         self.state.autofix_attempts[pr_key] = attempt
 
+        def _log(msg: str) -> None:
+            entry = AgentLogEntry(
+                timestamp=datetime.now(timezone.utc),
+                pr_key=pr_key,
+                message=msg,
+            )
+            attempt.log.append(entry)
+            self.state.global_log.append(entry)
+            if len(attempt.log) > 200:
+                attempt.log = attempt.log[-200:]
+            if len(self.state.global_log) > 500:
+                self.state.global_log = self.state.global_log[-500:]
+
+        _log(f"Starting {fix_type.value} fix for {pr.repo}#{pr.number}")
+
         try:
             # Prepare worktree (blocking I/O)
+            _log("Preparing worktree...")
             worktree = await asyncio.to_thread(prepare_worktree, pr.repo, pr.head_ref, self.settings)
             attempt.worktree_path = str(worktree)
-            self.state.autofix_attempts[pr_key] = attempt  # update with path
+            self.state.autofix_attempts[pr_key] = attempt
+            _log(f"Worktree ready: {worktree}")
             logger.info("Auto-fixing %s (%s) in %s", pr_key, fix_type.value, worktree)
 
             # Get CI logs if needed
             ci_logs = ""
             if fix_type == FixType.CI_FAILURE:
+                _log("Fetching CI failure logs...")
                 ci_logs = await asyncio.to_thread(get_ci_failure_logs, pr)
+                _log(f"Got {len(ci_logs)} chars of CI logs")
 
             # Build prompt
             prompt = build_prompt(pr, fix_type, ci_logs)
+            _log("Invoking Claude agent...")
 
             # Run Claude Agent SDK with timeout
             cost = 0.0
-
-            def _log(msg: str) -> None:
-                entry = AgentLogEntry(
-                    timestamp=datetime.now(timezone.utc),
-                    pr_key=pr_key,
-                    message=msg,
-                )
-                attempt.log.append(entry)
-                self.state.global_log.append(entry)
-                # Keep logs bounded
-                if len(attempt.log) > 200:
-                    attempt.log = attempt.log[-200:]
-                if len(self.state.global_log) > 500:
-                    self.state.global_log = self.state.global_log[-500:]
-
-            _log(f"Starting {fix_type.value} fix in {worktree}")
             try:
                 async with asyncio.timeout(600):  # 10 minute max
                     async for message in query(
@@ -148,11 +152,13 @@ class AutofixManager:
 
             attempt.status = AutofixStatus.SUCCEEDED
             attempt.cost_usd = cost
+            _log(f"Succeeded (cost: ${cost:.3f})")
             logger.info("Auto-fix succeeded for %s (cost: $%.4f)", pr_key, cost)
 
         except Exception as e:
             attempt.status = AutofixStatus.FAILED
             attempt.error = str(e)[:500]
+            _log(f"Failed: {str(e)[:200]}")
             logger.exception("Auto-fix failed for %s", pr_key)
 
         finally:

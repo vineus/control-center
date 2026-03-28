@@ -6,12 +6,12 @@
 </div>
 {% endif %}
 {% for rr in reviews %}
-<a href="{{ rr.url }}" target="_blank" class="block rounded-lg px-4 py-3 bg-surface-light transition-all duration-150 hover:translate-x-0.5
+<div class="rounded-lg px-4 py-3 bg-surface-light transition-all duration-150
     {% if rr.priority == 'high' %}card-glow-red{% elif rr.priority == 'medium' %}card-glow-yellow{% else %}card-glow-gray{% endif %}">
 
     {# Row 1: Title + priority #}
     <div class="flex items-center gap-2 min-w-0">
-        <span class="font-medium text-[13px] text-gray-100 truncate flex-1">{{ rr.title }}</span>
+        <a href="{{ rr.url }}" target="_blank" class="font-medium text-[13px] text-gray-100 truncate flex-1 hover:text-blue-300">{{ rr.title }}</a>
         {% if rr.priority == "high" %}
         <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-semibold">Stale</span>
         {% elif rr.priority == "medium" %}
@@ -38,5 +38,5 @@
         <span class="text-[10px] text-green-500/80">Others have approved</span>
     </div>
     {% endif %}
-</a>
+</div>
 {% endfor %}
