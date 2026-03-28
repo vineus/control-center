@@ -278,6 +278,39 @@ select.filter {
 .te-surface { background: var(--surface); }
 .te-border-b { border-bottom: 1px solid var(--border); }
 
+/* Stat cards: dim when zero */
+.stat-zero { opacity: 0.4; }
+.stat-zero:hover { border-color: var(--border); }
+
+/* Confidence bar */
+.conf-bar { width: 40px; height: 6px; background: var(--bg); outline: 1px solid var(--border); display: inline-block; vertical-align: middle; overflow: hidden; }
+.conf-fill { display: block; height: 100%; }
+
+/* Agent pulse */
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+/* Keyboard shortcuts overlay */
+.kbd-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,0.6); display: flex;
+    align-items: center; justify-content: center;
+}
+.kbd-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 2px; padding: 24px 32px; min-width: 280px;
+}
+.kbd-row { display: flex; justify-content: space-between; padding: 4px 0; }
+.kbd-key {
+    background: var(--elevated); border: 1px solid var(--border);
+    border-radius: 2px; padding: 1px 6px; font-size: 11px;
+    color: var(--text-secondary); min-width: 20px; text-align: center;
+}
+
+/* Viewport-locked dashboard */
+body.dashboard-view { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+body.dashboard-view main { flex: 1; overflow-y: auto; }
+
 /* HTMX */
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }
 .htmx-request .htmx-indicator { opacity: 1; }

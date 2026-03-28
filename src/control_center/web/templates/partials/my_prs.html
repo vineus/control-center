@@ -36,12 +36,15 @@
         <span class="te-secondary">{{ pr.repo.split('/')[-1] }}</span>
         <span>#{{ pr.number }}</span>
         <span>&middot;</span>
-        <span title="Created {{ pr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.created_at | timeago }}</span>
-        <span>&rarr;</span>
-        <span title="Updated {{ pr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.updated_at | timeago }}</span>
+        <span class="te-faint" title="Created {{ pr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.created_at | timeago }}</span>
+        <span class="te-faint">&rarr;</span>
+        <span class="te-secondary" title="Updated {{ pr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.updated_at | timeago }}</span>
         {% set conf_pct = (pr.merge_confidence * 100) | int %}
-        <span class="ml-auto tabular-nums {% if conf_pct >= 80 %}te-success{% elif conf_pct >= 50 %}te-warning{% else %}te-muted{% endif %}"
-            title="Merge confidence: CI {% if pr.ci_status.value == 'success' %}pass (+40%){% else %}not passing{% endif %}, review {% if pr.review_status.value == 'approved' %}approved (+40%){% elif pr.review_status.value == 'changes_requested' %}changes requested{% else %}pending (+20%){% endif %}{% if pr.is_draft %}, draft (halved){% endif %}">{{ conf_pct }}%</span>
+        <span class="ml-auto flex items-center gap-1.5 tabular-nums {% if conf_pct >= 80 %}te-success{% elif conf_pct >= 50 %}te-warning{% else %}te-muted{% endif %}"
+            title="Merge confidence: CI {% if pr.ci_status.value == 'success' %}pass (+40%){% else %}not passing{% endif %}, review {% if pr.review_status.value == 'approved' %}approved (+40%){% elif pr.review_status.value == 'changes_requested' %}changes requested{% else %}pending (+20%){% endif %}{% if pr.is_draft %}, draft (halved){% endif %}">
+            <span class="conf-bar"><span class="conf-fill" style="width:{{ conf_pct }}%;background:{% if conf_pct >= 80 %}var(--success){% elif conf_pct >= 50 %}var(--warning){% else %}var(--text-secondary){% endif %}"></span></span>
+            {{ conf_pct }}%
+        </span>
     </div>
 
     {# Issues #}

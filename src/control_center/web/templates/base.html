@@ -98,7 +98,7 @@
         setTimeout(checkNotifications, 2000);
     </script>
 </head>
-<body class="min-h-screen font-mono" style="background:var(--bg);color:var(--text)">
+<body class="min-h-screen font-mono {% block body_class %}{% endblock %}" style="background:var(--bg);color:var(--text)">
     {% set f = filters if filters is defined else {} %}
 
     {# Header #}
@@ -108,6 +108,7 @@
             <a href="/" class="text-sm font-bold tracking-widest uppercase hover:text-accent transition" style="color:var(--text)">CONTROL CENTER</a>
         </div>
         <div class="flex items-center gap-3 text-xs" style="color:var(--text-muted)">
+            <button id="theme-toggle" onclick="cycleTheme()" class="btn text-[10px]" title="Cycle theme (?)">{{ theme if theme is defined else 'dark' }}</button>
             <a href="/settings" class="transition" style="color:var(--text-muted)" title="Settings">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             </a>
@@ -125,6 +126,9 @@
                 class="{% if autofix_enabled is defined and autofix_enabled %}btn btn-accent{% else %}btn{% endif %}">
                 agent: {% if autofix_enabled is defined and autofix_enabled %}on{% else %}off{% endif %}
             </button>
+            {% if fixing_count is defined and fixing_count > 0 %}
+            <span class="w-1.5 h-1.5 pulse-dot" style="background:var(--purple)" title="{{ fixing_count }} PR(s) being fixed"></span>
+            {% endif %}
             <span id="poll-status" class="tabular-nums">
                 {% if state and state.last_poll %}{{ state.last_poll.strftime('%H:%M') }}{% endif %}
             </span>
@@ -158,6 +162,7 @@
     </nav>
 
     {# Filter bar #}
+    {% block filter_bar %}
     <div class="px-6 py-2.5 flex items-center gap-3 flex-wrap" style="border-bottom:1px solid var(--border)">
         <span class="text-[10px]" style="color:var(--text-faint)">//</span>
         <input id="filter-search" type="text" placeholder="search..." value="{{ f.search or '' }}" oninput="onSearchInput()" autocomplete="off"
@@ -190,9 +195,82 @@
         <button onclick="clearFilters()" class="text-[10px] te-faint hover:text-accent transition">&times; clear</button>
         {% endif %}
     </div>
+    {% endblock %}
 
     <main class="max-w-[1400px] mx-auto px-6 py-6">
         {% block content %}{% endblock %}
     </main>
+
+    {# Keyboard shortcuts overlay #}
+    <div id="kbd-overlay" class="kbd-overlay" style="display:none" onclick="if(event.target===this)toggleKbdHelp()">
+        <div class="kbd-panel">
+            <div class="text-[10px] te-muted uppercase tracking-widest mb-3">// keyboard shortcuts</div>
+            <div class="kbd-row"><span class="te-secondary text-[11px]">focus search</span><span class="kbd">/</span></div>
+            <div class="kbd-row"><span class="te-secondary text-[11px]">refresh</span><span class="kbd">r</span></div>
+            <div class="kbd-row"><span class="te-secondary text-[11px]">go to dashboard</span><span><span class="kbd">g</span> <span class="kbd">h</span></span></div>
+            <div class="kbd-row"><span class="te-secondary text-[11px]">go to settings</span><span><span class="kbd">g</span> <span class="kbd">s</span></span></div>
+            <div class="kbd-row"><span class="te-secondary text-[11px]">cycle theme</span><span class="kbd">t</span></div>
+            <div class="kbd-row"><span class="te-secondary text-[11px]">this help</span><span class="kbd">?</span></div>
+        </div>
+    </div>
+
+    <script>
+        // Theme cycling
+        const _themes = ['dark','light','phosphor','blueprint','paper','concrete','amber'];
+        function cycleTheme() {
+            const cur = document.documentElement.dataset.theme || 'dark';
+            const idx = (_themes.indexOf(cur) + 1) % _themes.length;
+            const next = _themes[idx];
+            document.documentElement.dataset.theme = next;
+            const btn = document.getElementById('theme-toggle');
+            if (btn) btn.textContent = next;
+            // Sync settings dropdown if on settings page
+            const sel = document.querySelector('[data-field="theme"]');
+            if (sel) sel.value = next;
+            fetch('/api/settings', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({theme: next})
+            });
+        }
+
+        // Keyboard shortcuts
+        let _pendingG = false;
+        function toggleKbdHelp() {
+            const el = document.getElementById('kbd-overlay');
+            el.style.display = el.style.display === 'none' ? '' : 'none';
+        }
+        document.addEventListener('keydown', function(e) {
+            const tag = (e.target.tagName || '').toLowerCase();
+            const inInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+            // Escape always closes overlay
+            if (e.key === 'Escape') {
+                document.getElementById('kbd-overlay').style.display = 'none';
+                if (inInput) e.target.blur();
+                return;
+            }
+            // ? shows help (shift+/)
+            if (e.key === '?' && !inInput) { toggleKbdHelp(); return; }
+            // / focuses search
+            if (e.key === '/' && !inInput) {
+                e.preventDefault();
+                const s = document.getElementById('filter-search');
+                if (s) s.focus();
+                return;
+            }
+            if (inInput) return;
+            // r refreshes
+            if (e.key === 'r') { if (typeof triggerRefresh === 'function') triggerRefresh(); return; }
+            // t cycles theme
+            if (e.key === 't') { cycleTheme(); return; }
+            // g + h/s navigation
+            if (e.key === 'g') { _pendingG = true; setTimeout(() => _pendingG = false, 800); return; }
+            if (_pendingG) {
+                _pendingG = false;
+                if (e.key === 'h') { window.location.href = '/'; return; }
+                if (e.key === 's') { window.location.href = '/settings'; return; }
+            }
+        });
+    </script>
 </body>
 </html>

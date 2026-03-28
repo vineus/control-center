@@ -106,6 +106,7 @@ async def dashboard(request: Request):
     settings = request.app.state.settings
     if not filters["org"] and settings.default_org:
         filters["org"] = settings.default_org
+    fixing_count = sum(1 for a in state.autofix_attempts.values() if a.status.value == "in_progress")
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -119,6 +120,7 @@ async def dashboard(request: Request):
             "autofix_enabled": request.app.state.settings.autofix_enabled,
             "skipped_prs": request.app.state.autofix_manager.skipped,
             "theme": request.app.state.settings.theme,
+            "fixing_count": fixing_count,
         },
     )
 

@@ -4,7 +4,7 @@
 {% endif %}
 {% for rr in reviews %}
 <div data-pr-title="{{ rr.title | lower }}" data-pr-repo="{{ rr.repo | lower }}" data-pr-branch="{{ rr.author | lower }}"
-    class="card pl-[18px]
+    class="card pl-[18px] {% if rr.priority == 'high' %}opacity-60{% endif %}
     {% if rr.priority == 'high' %}status-red{% elif rr.priority == 'medium' %}status-yellow{% else %}status-gray{% endif %}">
 
     <div class="flex items-center gap-2 min-w-0">

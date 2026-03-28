@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block body_class %}dashboard-view{% endblock %}
+
 {% block content %}
 {# Summary stats #}
 {% set ready_count = prs | selectattr("ready_to_merge") | list | length %}
@@ -14,36 +16,31 @@
 
 <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
     <a href="{% if is_ready %}/{% else %}/?sort=confidence&ci=success&review=approved{% endif %}"
-        class="stat {% if is_ready %}stat-active{% endif %} block" title="PRs with passing CI + approved review — click to filter">
+        class="stat {% if is_ready %}stat-active{% endif %} {% if ready_count == 0 %}stat-zero{% endif %} block" title="PRs with passing CI + approved review — click to filter">
         <div class="text-xl font-bold te-success tabular-nums">{{ ready_count }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">ready to merge</div>
     </a>
     <a href="{% if is_failing %}/{% else %}/?ci=failure{% endif %}"
-        class="stat {% if is_failing %}stat-active{% endif %} block" title="PRs where CI checks are failing — click to filter">
+        class="stat {% if is_failing %}stat-active{% endif %} {% if failing_count == 0 %}stat-zero{% endif %} block" title="PRs where CI checks are failing — click to filter">
         <div class="text-xl font-bold te-error tabular-nums">{{ failing_count }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">ci failing</div>
     </a>
     <a href="{% if is_changes %}/{% else %}/?review=changes_requested{% endif %}"
-        class="stat {% if is_changes %}stat-active{% endif %} block" title="PRs where reviewers requested changes — click to filter">
+        class="stat {% if is_changes %}stat-active{% endif %} {% if changes_count == 0 %}stat-zero{% endif %} block" title="PRs where reviewers requested changes — click to filter">
         <div class="text-xl font-bold te-warning tabular-nums">{{ changes_count }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">changes req.</div>
     </a>
     <a href="{% if is_fixing %}/{% else %}/?fixing=true{% endif %}"
-        class="stat {% if is_fixing %}stat-active{% endif %} block" title="PRs currently being fixed by the Claude agent — click to filter">
+        class="stat {% if is_fixing %}stat-active{% endif %} {% if fixing_count | length == 0 %}stat-zero{% endif %} block" title="PRs currently being fixed by the Claude agent — click to filter">
         <div class="text-xl font-bold te-purple tabular-nums">{{ fixing_count | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">agent fixing</div>
     </a>
-    <div class="stat cursor-pointer" title="Toggle review requests panel" onclick="
+    <div class="stat cursor-pointer {% if reviews | length == 0 %}stat-zero{% endif %}" title="Toggle review requests panel" onclick="
         const rr = document.getElementById('reviews-section');
         const prs = document.getElementById('prs-section');
-        const grid = document.getElementById('main-grid');
         rr.classList.toggle('hidden');
-        if (rr.classList.contains('hidden')) {
-            prs.className = 'lg:col-span-5';
-            grid.className = grid.className;
-        } else {
-            prs.className = 'lg:col-span-3';
-        }">
+        prs.className = rr.classList.contains('hidden') ? 'lg:col-span-5' : 'lg:col-span-3';
+    ">
         <div class="text-xl font-bold text-accent tabular-nums">{{ reviews | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">review requests</div>
     </div>
@@ -91,7 +88,8 @@
         onclick="document.getElementById('global-log').classList.toggle('hidden')">
         <span class="text-[10px] te-faint">&gt;</span>
         <h2 class="text-xs font-bold te-text uppercase tracking-widest">agent log</h2>
-        <span class="text-xs te-faint tabular-nums">{{ state.global_log | length }}</span>
+        <span class="text-xs tabular-nums {% if fixing_count | length > 0 %}te-purple{% else %}te-faint{% endif %}">{{ state.global_log | length }}</span>
+        {% if fixing_count | length > 0 %}<span class="w-1.5 h-1.5 pulse-dot" style="background:var(--purple)"></span>{% endif %}
     </div>
     <div id="global-log" class="{% if not state.global_log %}hidden{% endif %} log-panel p-3"
         hx-get="/partials/global-log"

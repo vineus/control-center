@@ -19,7 +19,7 @@ A dashboard that monitors your GitHub pull requests and automatically fixes CI f
 ### With uvx (no clone needed)
 
 ```bash
-uvx --from git+https://github.com/vineus/control-center.git control-center
+uvx git+https://github.com/vineus/control-center
 ```
 
 ### From source
