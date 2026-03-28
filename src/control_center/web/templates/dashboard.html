@@ -35,11 +35,11 @@
         <div class="text-xl font-bold te-purple tabular-nums">{{ fixing_count | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">agent fixing</div>
     </a>
-    <div class="stat cursor-pointer {% if reviews | length == 0 %}stat-zero{% endif %}" title="Toggle review requests panel" onclick="
+    <div id="reviews-toggle" class="stat cursor-pointer {% if reviews | length == 0 %}stat-zero{% endif %}" title="Toggle review requests panel" onclick="
         const rr = document.getElementById('reviews-section');
-        const prs = document.getElementById('prs-section');
+        const toggle = document.getElementById('reviews-toggle');
         rr.classList.toggle('hidden');
-        prs.className = rr.classList.contains('hidden') ? 'lg:col-span-5' : 'lg:col-span-3';
+        toggle.classList.toggle('stat-active', !rr.classList.contains('hidden'));
     ">
         <div class="text-xl font-bold text-accent tabular-nums">{{ reviews | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">review requests</div>
