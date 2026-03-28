@@ -19,6 +19,10 @@ username = "{username}"
 # Default org to filter PRs (leave empty for all orgs)
 default_org = ""
 
+[ui]
+# "dark" or "light"
+theme = "dark"
+
 [server]
 host = "0.0.0.0"
 port = 8000
@@ -64,6 +68,7 @@ def _ensure_config() -> dict:
 class Settings(BaseSettings):
     github_username: str = ""
     default_org: str = ""
+    theme: str = "dark"  # "dark" or "light"
     poll_interval_seconds: int = 180
     host: str = "0.0.0.0"
     port: int = 8000
@@ -84,12 +89,14 @@ class Settings(BaseSettings):
         toml = _ensure_config()
 
         gh = toml.get("github", {})
+        ui = toml.get("ui", {})
         srv = toml.get("server", {})
         af = toml.get("autofix", {})
 
         file_values = {
             "github_username": gh.get("username", ""),
             "default_org": gh.get("default_org", ""),
+            "theme": ui.get("theme", "dark"),
             "poll_interval_seconds": srv.get("poll_interval_seconds", 180),
             "host": srv.get("host", "0.0.0.0"),
             "port": srv.get("port", 8000),
@@ -113,6 +120,9 @@ class Settings(BaseSettings):
 [github]
 username = "{self.github_username}"
 default_org = "{self.default_org}"
+
+[ui]
+theme = "{self.theme}"
 
 [server]
 host = "{self.host}"

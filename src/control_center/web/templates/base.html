@@ -1,52 +1,36 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="{{ theme if theme is defined else 'dark' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/static/style.css">
     <script>
         tailwind.config = {
-            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        bg: '#0a0e1a',
-                        surface: { DEFAULT: '#111827', light: '#1a2235', lighter: '#252f45' },
-                        accent: '#3b82f6',
+                        bg: '#1a1a1a',
+                        surface: '#222222',
+                        elevated: '#2a2a2a',
+                        border: '#333333',
+                        accent: '#ff6600',
+                    },
+                    fontFamily: {
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    borderRadius: {
+                        DEFAULT: '2px',
+                        sm: '2px',
+                        md: '2px',
+                        lg: '2px',
                     }
                 }
             }
         }
     </script>
-    <style>
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        .htmx-indicator { opacity: 0; transition: opacity 200ms; }
-        .htmx-request .htmx-indicator { opacity: 1; }
-        .card-glow-green { box-shadow: inset 3px 0 0 #22c55e, 0 0 0 1px rgba(34,197,94,0.1); }
-        .card-glow-red { box-shadow: inset 3px 0 0 #ef4444, 0 0 0 1px rgba(239,68,68,0.1); }
-        .card-glow-yellow { box-shadow: inset 3px 0 0 #eab308, 0 0 0 1px rgba(234,179,8,0.1); }
-        .card-glow-gray { box-shadow: inset 3px 0 0 #6b7280, 0 0 0 1px rgba(107,114,128,0.1); }
-        .card-merge-ready {
-            box-shadow: inset 3px 0 0 #22c55e, 0 0 12px rgba(34,197,94,0.08), 0 0 0 1px rgba(34,197,94,0.15);
-            background: linear-gradient(135deg, rgba(34,197,94,0.04) 0%, transparent 60%);
-        }
-        .stat-card { backdrop-filter: blur(8px); }
-        select, input[type="text"] { cursor: pointer; }
-        .filter-pill {
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239ca3af' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 8px center;
-            padding-right: 24px;
-        }
-        .section-scroll { max-height: calc(100vh - 220px); overflow-y: auto; }
-        .section-scroll::-webkit-scrollbar { width: 4px; }
-        .section-scroll::-webkit-scrollbar-track { background: transparent; }
-        .section-scroll::-webkit-scrollbar-thumb { background: #252f45; border-radius: 2px; }
-    </style>
     <script>
         function _buildQs() {
             const params = new URLSearchParams();
@@ -90,7 +74,7 @@
                     const prev = _prevAutofix[key];
                     if (prev && prev !== af.status && af.status !== 'in_progress') {
                         if (Notification.permission === 'granted') {
-                            const icon = af.status === 'succeeded' ? '✅' : '❌';
+                            const icon = af.status === 'succeeded' ? '\u2705' : '\u274c';
                             new Notification(`${icon} Auto-fix ${af.status}`, {
                                 body: `${key} (${af.fix_type.replace('_',' ')})${af.error ? ': '+af.error.slice(0,80) : ''}`,
                                 tag: key,
@@ -99,12 +83,11 @@
                     }
                     _prevAutofix[key] = af.status;
                 }
-                // Notify on new "ready to merge" PRs
                 for (const pr of d.my_prs || []) {
                     const k = 'ready_' + pr.repo + '#' + pr.number;
                     if (pr.ready_to_merge && !_prevAutofix[k]) {
                         if (Notification.permission === 'granted') {
-                            new Notification('🟢 Ready to merge', { body: pr.title, tag: k });
+                            new Notification('\ud83d\udfe2 Ready to merge', { body: pr.title, tag: k });
                         }
                     }
                     if (pr.ready_to_merge) _prevAutofix[k] = true;
@@ -112,128 +95,107 @@
             }).catch(() => {});
         }
         setInterval(checkNotifications, 30000);
-        setTimeout(checkNotifications, 2000); // initial seed
+        setTimeout(checkNotifications, 2000);
     </script>
 </head>
-<body class="bg-bg text-gray-200 min-h-screen">
+<body class="min-h-screen font-mono" style="background:var(--bg);color:var(--text)">
     {% set f = filters if filters is defined else {} %}
+
     {# Header #}
-    <nav class="px-6 py-3 flex items-center justify-between bg-surface/80 backdrop-blur-sm border-b border-white/5 sticky top-0 z-10">
-        <div class="flex items-center gap-2.5">
-            <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <a href="/" class="text-base font-semibold tracking-tight text-white hover:text-gray-300 transition">Control Center</a>
+    <nav class="px-6 py-3 flex items-center justify-between sticky top-0 z-10" style="background:var(--bg);border-bottom:1px solid var(--border)">
+        <div class="flex items-center gap-3">
+            <span class="w-1.5 h-1.5" style="background:var(--success)"></span>
+            <a href="/" class="text-sm font-bold tracking-widest uppercase hover:text-accent transition" style="color:var(--text)">CONTROL CENTER</a>
         </div>
-        <div class="flex items-center gap-3 text-xs text-gray-500">
-            <a href="/settings" class="text-gray-500 hover:text-gray-300 transition" title="Settings">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <div class="flex items-center gap-3 text-xs" style="color:var(--text-muted)">
+            <button onclick="fetch('/api/theme/toggle',{method:'POST'}).then(r=>r.json()).then(d=>{document.documentElement.dataset.theme=d.theme})"
+                class="btn text-[10px]" title="Toggle theme">
+                {% if theme == 'light' %}dark{% else %}light{% endif %}
+            </button>
+            <a href="/settings" class="transition" style="color:var(--text-muted)" title="Settings">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             </a>
             {% if state and state.orgs %}
-            <select id="filter-org" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
-                <option value="">All orgs</option>
+            <select id="filter-org" onchange="applyFilters()" class="filter">
+                <option value="">all orgs</option>
                 {% for org in state.orgs %}
                 <option value="{{ org }}" {% if f.org == org %}selected{% endif %}>{{ org }}</option>
                 {% endfor %}
             </select>
             {% endif %}
-            {# Autofix toggle #}
             <button
                 id="autofix-toggle"
-                onclick="fetch('/api/autofix/toggle',{method:'POST'}).then(r=>r.json()).then(d=>{const b=document.getElementById('autofix-toggle');const on=d.autofix_enabled;b.innerHTML=on?'Agent: ON':'Agent: OFF';b.className=b.className.replace(/bg-\S+/g,'')+(on?' bg-green-500/20 text-green-400 border-green-500/30':' bg-white/5 text-gray-500 border-white/10')})"
-                class="px-2.5 py-1 rounded-full border text-[11px] font-medium transition
-                    {% if autofix_enabled is defined and autofix_enabled %}bg-green-500/20 text-green-400 border-green-500/30{% else %}bg-white/5 text-gray-500 border-white/10{% endif %}">
-                Agent: {% if autofix_enabled is defined and autofix_enabled %}ON{% else %}OFF{% endif %}
+                onclick="fetch('/api/autofix/toggle',{method:'POST'}).then(r=>r.json()).then(d=>{const b=document.getElementById('autofix-toggle');const on=d.autofix_enabled;b.textContent=on?'agent: on':'agent: off';b.className=on?'btn btn-accent':'btn'})"
+                class="{% if autofix_enabled is defined and autofix_enabled %}btn btn-accent{% else %}btn{% endif %}">
+                agent: {% if autofix_enabled is defined and autofix_enabled %}on{% else %}off{% endif %}
             </button>
             <span id="poll-status" class="tabular-nums">
-                {% if state and state.last_poll %}{{ state.last_poll.strftime('%H:%M UTC') }}{% endif %}
+                {% if state and state.last_poll %}{{ state.last_poll.strftime('%H:%M') }}{% endif %}
             </span>
-            <span id="poll-countdown" class="text-gray-600 tabular-nums"></span>
-            <button id="refresh-btn" onclick="triggerRefresh()"
-                class="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 transition text-gray-400 hover:text-gray-200 text-xs">
-                <svg id="refresh-icon" class="w-3.5 h-3.5 inline -mt-0.5 mr-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                <span id="refresh-text">Refresh</span>
+            <span id="poll-countdown" class="te-faint tabular-nums"></span>
+            <button id="refresh-btn" onclick="triggerRefresh()" class="btn">
+                <span id="refresh-text">refresh</span>
             </button>
             <script>
-                const POLL_INTERVAL = {{ state.last_poll and (filters if filters is defined else {})|length }} || 0 ? 180 : 180;
-                let _nextPoll = Date.now() + 30000; // first HTMX refresh in 30s
+                let _nextPoll = Date.now() + 30000;
                 let _refreshing = false;
-
                 function triggerRefresh() {
                     if (_refreshing) return;
                     _refreshing = true;
-                    const btn = document.getElementById('refresh-btn');
-                    const icon = document.getElementById('refresh-icon');
-                    const text = document.getElementById('refresh-text');
-                    const countdown = document.getElementById('poll-countdown');
-                    icon.classList.add('animate-spin');
-                    text.textContent = 'Refreshing...';
-                    countdown.textContent = '';
+                    document.getElementById('refresh-text').textContent = 'polling...';
                     fetch('/api/poll', {method: 'POST'})
-                        .then(() => {
-                            // Wait a bit for the poll to complete, then reload
-                            setTimeout(() => {
-                                text.textContent = 'Done!';
-                                icon.classList.remove('animate-spin');
-                                setTimeout(() => location.reload(), 500);
-                            }, 3000);
-                        })
-                        .catch(() => {
-                            text.textContent = 'Failed';
-                            icon.classList.remove('animate-spin');
-                            _refreshing = false;
-                        });
+                        .then(() => setTimeout(() => {
+                            document.getElementById('refresh-text').textContent = 'done';
+                            setTimeout(() => location.reload(), 400);
+                        }, 3000))
+                        .catch(() => { document.getElementById('refresh-text').textContent = 'error'; _refreshing = false; });
                 }
-
-                // Countdown timer
                 setInterval(() => {
                     if (_refreshing) return;
                     const cd = document.getElementById('poll-countdown');
-                    const secsLeft = Math.max(0, Math.round((_nextPoll - Date.now()) / 1000));
-                    if (secsLeft > 0) {
-                        cd.textContent = secsLeft + 's';
-                    } else {
-                        cd.textContent = '';
-                        _nextPoll = Date.now() + 30000; // reset after HTMX auto-refresh
-                    }
+                    const s = Math.max(0, Math.round((_nextPoll - Date.now()) / 1000));
+                    cd.textContent = s > 0 ? s + 's' : '';
+                    if (s <= 0) _nextPoll = Date.now() + 30000;
                 }, 1000);
             </script>
         </div>
     </nav>
 
     {# Filter bar #}
-    <div class="px-6 py-2 flex items-center gap-2 flex-wrap bg-surface/40 border-b border-white/5">
-        <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-        <input id="filter-search" type="text" placeholder="Search..." value="{{ f.search or '' }}" oninput="onSearchInput()" autocomplete="off"
-            class="bg-transparent border-none text-gray-300 text-xs focus:outline-none w-32 placeholder-gray-600">
-        <span class="w-px h-4 bg-white/10"></span>
-        <select id="filter-ci" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
-            <option value="">CI: All</option>
-            <option value="success" {% if f.ci == 'success' %}selected{% endif %}>CI: Pass</option>
-            <option value="failure" {% if f.ci == 'failure' %}selected{% endif %}>CI: Fail</option>
-            <option value="pending" {% if f.ci == 'pending' %}selected{% endif %}>CI: Pending</option>
+    <div class="px-6 py-2.5 flex items-center gap-3 flex-wrap" style="border-bottom:1px solid var(--border)">
+        <span class="text-[10px]" style="color:var(--text-faint)">//</span>
+        <input id="filter-search" type="text" placeholder="search..." value="{{ f.search or '' }}" oninput="onSearchInput()" autocomplete="off"
+            class="bg-transparent border-none text-xs w-32 outline-none" style="color:var(--text);--tw-placeholder-color:var(--text-faint)">
+        <span class="w-px h-3" style="background:var(--border)"></span>
+        <select id="filter-ci" onchange="applyFilters()" class="filter">
+            <option value="">ci: all</option>
+            <option value="success" {% if f.ci == 'success' %}selected{% endif %}>ci: pass</option>
+            <option value="failure" {% if f.ci == 'failure' %}selected{% endif %}>ci: fail</option>
+            <option value="pending" {% if f.ci == 'pending' %}selected{% endif %}>ci: pending</option>
         </select>
-        <select id="filter-review" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
-            <option value="">Review: All</option>
-            <option value="approved" {% if f.review == 'approved' %}selected{% endif %}>Approved</option>
-            <option value="changes_requested" {% if f.review == 'changes_requested' %}selected{% endif %}>Changes req.</option>
-            <option value="pending" {% if f.review == 'pending' %}selected{% endif %}>Pending</option>
+        <select id="filter-review" onchange="applyFilters()" class="filter">
+            <option value="">review: all</option>
+            <option value="approved" {% if f.review == 'approved' %}selected{% endif %}>approved</option>
+            <option value="changes_requested" {% if f.review == 'changes_requested' %}selected{% endif %}>changes req.</option>
+            <option value="pending" {% if f.review == 'pending' %}selected{% endif %}>pending</option>
         </select>
-        <select id="filter-draft" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
-            <option value="">Drafts: All</option>
-            <option value="hide" {% if f.draft == 'hide' %}selected{% endif %}>Hide drafts</option>
-            <option value="only" {% if f.draft == 'only' %}selected{% endif %}>Drafts only</option>
+        <select id="filter-draft" onchange="applyFilters()" class="filter">
+            <option value="">drafts: all</option>
+            <option value="hide" {% if f.draft == 'hide' %}selected{% endif %}>hide drafts</option>
+            <option value="only" {% if f.draft == 'only' %}selected{% endif %}>drafts only</option>
         </select>
-        <span class="w-px h-4 bg-white/10"></span>
-        <select id="filter-sort" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
-            <option value="updated" {% if f.sort == 'updated' or not f.sort %}selected{% endif %}>Updated</option>
-            <option value="created" {% if f.sort == 'created' %}selected{% endif %}>Created</option>
-            <option value="confidence" {% if f.sort == 'confidence' %}selected{% endif %}>Confidence</option>
+        <span class="w-px h-3" style="background:var(--border)"></span>
+        <select id="filter-sort" onchange="applyFilters()" class="filter">
+            <option value="updated" {% if f.sort == 'updated' or not f.sort %}selected{% endif %}>sort: updated</option>
+            <option value="created" {% if f.sort == 'created' %}selected{% endif %}>sort: created</option>
+            <option value="confidence" {% if f.sort == 'confidence' %}selected{% endif %}>sort: confidence</option>
         </select>
         {% if f.org or f.ci or f.review or f.draft or f.search %}
-        <button onclick="clearFilters()" class="text-xs text-gray-600 hover:text-gray-400 transition ml-1">&times; Clear</button>
+        <button onclick="clearFilters()" class="text-[10px] te-faint hover:text-accent transition">&times; clear</button>
         {% endif %}
     </div>
 
-    <main class="max-w-[1400px] mx-auto px-6 py-5">
+    <main class="max-w-[1400px] mx-auto px-6 py-6">
         {% block content %}{% endblock %}
     </main>
 </body>

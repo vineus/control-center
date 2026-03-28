@@ -118,6 +118,7 @@ async def dashboard(request: Request):
             "autofix": state.autofix_attempts,
             "autofix_enabled": request.app.state.settings.autofix_enabled,
             "skipped_prs": request.app.state.autofix_manager.skipped,
+            "theme": request.app.state.settings.theme,
         },
     )
 
@@ -176,6 +177,7 @@ async def settings_page(request: Request):
             "state": request.app.state.poller.state,
             "filters": {},
             "autofix_enabled": settings.autofix_enabled,
+            "theme": settings.theme,
         },
     )
 
@@ -187,6 +189,7 @@ async def save_settings(request: Request):
 
     settings.github_username = form.get("github_username", settings.github_username).strip()
     settings.default_org = form.get("default_org", settings.default_org).strip()
+    settings.theme = form.get("theme", settings.theme).strip()
     settings.poll_interval_seconds = int(form.get("poll_interval_seconds", settings.poll_interval_seconds))
     settings.autofix_enabled = form.get("autofix_enabled") == "on"
     settings.autofix_max_budget_usd = float(form.get("autofix_max_budget_usd", settings.autofix_max_budget_usd))
@@ -205,9 +208,18 @@ async def save_settings(request: Request):
             "state": request.app.state.poller.state,
             "filters": {},
             "autofix_enabled": settings.autofix_enabled,
+            "theme": settings.theme,
             "saved": True,
         },
     )
+
+
+@router.post("/api/theme/toggle")
+async def toggle_theme(request: Request):
+    settings = request.app.state.settings
+    settings.theme = "light" if settings.theme == "dark" else "dark"
+    settings.save()
+    return {"theme": settings.theme}
 
 
 @router.post("/api/autofix/toggle")

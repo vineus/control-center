@@ -1,14 +1,186 @@
-/* Minimal overrides — Tailwind handles most styling */
-::-webkit-scrollbar {
-    width: 8px;
+/* Teenage Engineering inspired — industrial minimalism */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+* { font-family: 'JetBrains Mono', monospace; }
+
+/* Theme variables */
+:root, [data-theme="dark"] {
+    --bg: #1a1a1a;
+    --surface: #222222;
+    --elevated: #2a2a2a;
+    --border: #333333;
+    --border-strong: #555555;
+    --text: #e5e5e5;
+    --text-secondary: #999999;
+    --text-muted: #666666;
+    --text-faint: #444444;
+    --hover-bg: #2a2a2a;
 }
-::-webkit-scrollbar-track {
-    background: #0f172a;
+
+[data-theme="light"] {
+    --bg: #e5e5e5;
+    --surface: #f0f0f0;
+    --elevated: #ffffff;
+    --border: #cccccc;
+    --border-strong: #999999;
+    --text: #1a1a1a;
+    --text-secondary: #555555;
+    --text-muted: #777777;
+    --text-faint: #aaaaaa;
+    --hover-bg: #d8d8d8;
 }
-::-webkit-scrollbar-thumb {
-    background: #334155;
-    border-radius: 4px;
+
+/* Accent stays the same in both themes */
+:root {
+    --accent: #ff6600;
+    --success: #00cc66;
+    --error: #ff3333;
+    --warning: #ffaa00;
+    --purple: #aa66ff;
+    --info: #5599cc;
 }
-::-webkit-scrollbar-thumb:hover {
-    background: #475569;
+
+body { background: var(--bg); color: var(--text); }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* Status left borders */
+.status-green { border-left: 2px solid var(--success); }
+.status-red { border-left: 2px solid var(--error); }
+.status-yellow { border-left: 2px solid var(--warning); }
+.status-orange { border-left: 2px solid var(--accent); }
+.status-gray { border-left: 2px solid var(--border); }
+.status-purple { border-left: 2px solid var(--purple); }
+
+/* Cards */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px;
+    transition: border-color 0.15s;
 }
+.card:hover { border-color: var(--border-strong); }
+
+/* Stat cards */
+.stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 12px 16px;
+}
+.stat:hover { border-color: var(--border-strong); }
+.stat-active { border-color: var(--accent) !important; }
+
+/* Buttons */
+.btn {
+    border: 1px solid var(--border-strong);
+    border-radius: 2px;
+    padding: 4px 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn:hover { border-color: var(--text); color: var(--text); }
+.btn-accent { border-color: var(--accent); color: var(--accent); }
+.btn-accent:hover { background: var(--accent); color: var(--bg); }
+.btn-danger { border-color: var(--error); color: var(--error); }
+.btn-danger:hover { background: var(--error); color: var(--bg); }
+
+/* Badge */
+.badge {
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+.badge-green { border-color: var(--success); color: var(--success); }
+.badge-red { border-color: var(--error); color: var(--error); }
+.badge-yellow { border-color: var(--warning); color: var(--warning); }
+.badge-orange { border-color: var(--accent); color: var(--accent); }
+
+/* Inputs */
+input, select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+input:focus { border-color: var(--accent); }
+select:focus { border-color: var(--border-strong); outline: none; }
+input::placeholder { color: var(--text-faint); }
+
+/* Filter pills */
+select.filter {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' fill='%23555' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    padding: 4px 20px 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    background-color: var(--bg);
+}
+
+/* Toggle switch */
+.toggle { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+.toggle input { display: none; }
+.toggle-track {
+    width: 32px; height: 16px;
+    background: var(--border); border: 1px solid var(--border-strong);
+    border-radius: 2px; position: relative;
+    transition: all 0.15s;
+}
+.toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+.toggle-knob {
+    position: absolute; top: 2px; left: 2px;
+    width: 10px; height: 10px;
+    background: var(--text-secondary); border-radius: 1px;
+    transition: all 0.15s;
+}
+.toggle input:checked + .toggle-track .toggle-knob { left: 18px; background: var(--bg); }
+
+/* Section scroll */
+.section-scroll { max-height: calc(100vh - 260px); overflow-y: auto; }
+
+/* Log panel */
+.log-panel {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+/* Utility classes for theme colors */
+.te-faint { color: var(--text-faint); }
+.te-muted { color: var(--text-muted); }
+.te-secondary { color: var(--text-secondary); }
+.te-text { color: var(--text); }
+.hover-bg-elevated:hover { background: var(--elevated); }
+.te-accent { color: var(--accent); }
+.te-success { color: var(--success); }
+.te-error { color: var(--error); }
+.te-warning { color: var(--warning); }
+.te-purple { color: var(--purple); }
+.te-info { color: var(--info); }
+.te-border-error { border-color: var(--error); }
+.te-border-success { border-color: var(--success); }
+.te-bg { background: var(--bg); }
+.te-surface { background: var(--surface); }
+.te-border-b { border-bottom: 1px solid var(--border); }
+
+/* HTMX */
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }
