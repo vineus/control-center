@@ -6,6 +6,7 @@ from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage
 
 from control_center.agent.autofix import (
     build_prompt,
+    cleanup_stale_worktrees,
     detect_fix_type,
     get_ci_failure_logs,
     prepare_worktree,
@@ -33,6 +34,26 @@ class AutofixManager:
             if fix_type is None:
                 continue
             asyncio.create_task(self._run_fix(pr, fix_type))
+
+    async def cleanup_worktrees(self, prs: list[PRStatus]) -> None:
+        """Remove worktrees for PRs that no longer need fixing (closed, merged, CI green)."""
+        try:
+            # Collect branches of open PRs that still need work
+            open_branches = set()
+            for pr in prs:
+                if pr.needs_fix:
+                    open_branches.add(pr.head_ref)
+
+            cleaned = await asyncio.to_thread(
+                cleanup_stale_worktrees,
+                open_branches,
+                self._running,
+                self.settings,
+            )
+            if cleaned:
+                logger.info("Cleaned up %d stale worktrees: %s", len(cleaned), cleaned)
+        except Exception:
+            logger.exception("Worktree cleanup failed")
 
     def _should_fix(self, pr: PRStatus) -> FixType | None:
         fix_type = detect_fix_type(pr)

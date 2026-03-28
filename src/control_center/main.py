@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
             try:
                 await asyncio.to_thread(poller._poll_once)
                 await autofix_manager.check_and_fix(state.my_prs)
+                await autofix_manager.cleanup_worktrees(state.my_prs)
             except Exception:
                 logger.exception("Poll/fix cycle failed")
             await asyncio.sleep(settings.poll_interval_seconds)
