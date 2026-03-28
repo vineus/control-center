@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        surface: { DEFAULT: '#0f172a', light: '#1e293b', lighter: '#334155' },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+        .htmx-request .htmx-indicator { opacity: 1; }
+    </style>
+    <script>
+        function applyFilters() {
+            const params = new URLSearchParams();
+            const org = document.getElementById('filter-org')?.value;
+            const ci = document.getElementById('filter-ci')?.value;
+            const review = document.getElementById('filter-review')?.value;
+            const draft = document.getElementById('filter-draft')?.value;
+            const sort = document.getElementById('filter-sort')?.value;
+            const search = document.getElementById('filter-search')?.value?.trim();
+            if (org) params.set('org', org);
+            if (ci) params.set('ci', ci);
+            if (review) params.set('review', review);
+            if (draft) params.set('draft', draft);
+            if (sort && sort !== 'updated') params.set('sort', sort);
+            if (search) params.set('search', search);
+            const qs = params.toString();
+            window.location.href = '/' + (qs ? '?' + qs : '');
+        }
+        function clearFilters() {
+            window.location.href = '/';
+        }
+        let searchTimeout;
+        function onSearchInput() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(applyFilters, 400);
+        }
+    </script>
+</head>
+<body class="bg-surface text-gray-100 min-h-screen">
+    <nav class="border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-semibold tracking-tight">Control Center</h1>
+        </div>
+        <div class="flex items-center gap-4 text-sm text-gray-400">
+            {% if state and state.last_poll %}
+            <span>Last poll: {{ state.last_poll.strftime('%H:%M:%S UTC') }}</span>
+            {% endif %}
+            <button
+                hx-post="/api/poll"
+                hx-swap="none"
+                class="px-3 py-1.5 bg-surface-lighter rounded-md hover:bg-gray-600 transition text-gray-200"
+            >
+                Refresh
+            </button>
+        </div>
+    </nav>
+
+    {# Filter bar #}
+    {% set f = filters if filters is defined else {} %}
+    <div class="border-b border-gray-700/50 px-6 py-3 flex items-center gap-3 flex-wrap bg-surface-light/30">
+        <input
+            id="filter-search"
+            type="text"
+            placeholder="Search PRs..."
+            value="{{ f.search or '' }}"
+            oninput="onSearchInput()"
+            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500 w-48"
+        >
+        {% if state and state.orgs %}
+        <select id="filter-org" onchange="applyFilters()"
+            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
+            <option value="">All orgs</option>
+            {% for org in state.orgs %}
+            <option value="{{ org }}" {% if f.org == org %}selected{% endif %}>{{ org }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        <select id="filter-ci" onchange="applyFilters()"
+            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
+            <option value="">All CI</option>
+            <option value="success" {% if f.ci == 'success' %}selected{% endif %}>CI Passing</option>
+            <option value="failure" {% if f.ci == 'failure' %}selected{% endif %}>CI Failing</option>
+            <option value="pending" {% if f.ci == 'pending' %}selected{% endif %}>CI Pending</option>
+        </select>
+        <select id="filter-review" onchange="applyFilters()"
+            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
+            <option value="">All reviews</option>
+            <option value="approved" {% if f.review == 'approved' %}selected{% endif %}>Approved</option>
+            <option value="changes_requested" {% if f.review == 'changes_requested' %}selected{% endif %}>Changes requested</option>
+            <option value="pending" {% if f.review == 'pending' %}selected{% endif %}>Pending review</option>
+        </select>
+        <select id="filter-draft" onchange="applyFilters()"
+            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
+            <option value="">All PRs</option>
+            <option value="hide" {% if f.draft == 'hide' %}selected{% endif %}>Hide drafts</option>
+            <option value="only" {% if f.draft == 'only' %}selected{% endif %}>Drafts only</option>
+        </select>
+        <span class="text-gray-600 mx-1">|</span>
+        <select id="filter-sort" onchange="applyFilters()"
+            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
+            <option value="updated" {% if f.sort == 'updated' or not f.sort %}selected{% endif %}>Sort: Last updated</option>
+            <option value="created" {% if f.sort == 'created' %}selected{% endif %}>Sort: Created</option>
+            <option value="confidence" {% if f.sort == 'confidence' %}selected{% endif %}>Sort: Merge confidence</option>
+        </select>
+        {% if f.org or f.ci or f.review or f.draft or f.search %}
+        <button onclick="clearFilters()" class="text-xs text-gray-500 hover:text-gray-300 transition">Clear</button>
+        {% endif %}
+    </div>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

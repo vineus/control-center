@@ -1,0 +1,36 @@
+{% set reviews = reviews if reviews is defined else state.review_requests %}
+{% if not reviews %}
+<div class="text-gray-500 text-sm py-8 text-center">No pending review requests</div>
+{% endif %}
+{% for rr in reviews %}
+<div class="bg-surface-light rounded-lg p-4 mb-3 border border-gray-700/50 hover:border-gray-600 transition">
+    <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+            <a href="{{ rr.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 font-medium text-sm truncate block">
+                {{ rr.title }}
+            </a>
+            <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-500">
+                <span class="bg-surface-lighter px-2 py-0.5 rounded">{{ rr.repo.split('/')[-1] }}</span>
+                <span>#{{ rr.number }}</span>
+                <span>by {{ rr.author }}</span>
+                <span class="ml-auto" title="Created {{ rr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">opened {{ rr.created_at | timeago }}</span>
+                <span title="Updated {{ rr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">updated {{ rr.updated_at | timeago }}</span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            {# Priority badge #}
+            {% if rr.priority == "high" %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-400 border border-red-700/50">Stale</span>
+            {% elif rr.priority == "medium" %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-700/50">Aging</span>
+            {% else %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-surface-lighter text-gray-400">New</span>
+            {% endif %}
+
+            {% if rr.has_other_approvals %}
+            <span class="text-xs text-green-500" title="Others have approved">+1</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endfor %}

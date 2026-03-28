@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if state.poll_error %}
+<div class="mb-6 p-4 bg-red-900/30 border border-red-700 rounded-lg text-red-300 text-sm">
+    Poll error: {{ state.poll_error }}
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <section>
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-medium">My Pull Requests</h2>
+            <span class="text-sm text-gray-500">{{ prs | length }} open</span>
+        </div>
+        <div
+            hx-get="/partials/my-prs{{ filter_qs }}"
+            hx-trigger="every 30s"
+            hx-swap="innerHTML"
+        >
+            {% include "partials/my_prs.html" %}
+        </div>
+    </section>
+
+    <section>
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-medium">Review Requests</h2>
+            <span class="text-sm text-gray-500">{{ reviews | length }} pending</span>
+        </div>
+        <div
+            hx-get="/partials/reviews{{ filter_qs }}"
+            hx-trigger="every 30s"
+            hx-swap="innerHTML"
+        >
+            {% include "partials/review_requests.html" %}
+        </div>
+    </section>
+</div>
+{% endblock %}
