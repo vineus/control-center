@@ -1,13 +1,40 @@
 {% if not log %}
 <div class="text-gray-600 text-xs py-6 text-center">No agent activity yet. Enable the agent to start fixing PRs.</div>
 {% else %}
-<div class="space-y-0.5 font-mono text-[11px]">
+<div class="space-y-0.5 font-mono text-[11px]" id="global-log-entries">
     {% for entry in log | reverse %}
-    <div class="flex gap-2 py-0.5 px-1 rounded hover:bg-white/5">
+    <div class="flex gap-2 py-0.5 px-1 rounded hover:bg-white/5 log-entry" data-pr="{{ entry.pr_key }}">
         <span class="text-gray-600 shrink-0 tabular-nums">{{ entry.timestamp.strftime('%H:%M:%S') }}</span>
-        <span class="text-purple-400/70 shrink-0 whitespace-nowrap">{{ entry.pr_key }}</span>
+        <span class="text-purple-400/70 shrink-0 whitespace-nowrap cursor-pointer hover:text-purple-300 select-none log-pr-filter"
+            onclick="window._toggleLogFilter('{{ entry.pr_key }}')">{{ entry.pr_key }}</span>
         <span class="{% if entry.message.startswith('[') %}text-blue-400{% elif 'fail' in entry.message.lower() or 'error' in entry.message.lower() %}text-red-400{% elif 'succeed' in entry.message.lower() or 'fixed' in entry.message.lower() %}text-green-400{% else %}text-gray-400{% endif %} break-all">{{ entry.message }}</span>
     </div>
     {% endfor %}
 </div>
+<script>
+window._logFilterKey = window._logFilterKey || null;
+window._toggleLogFilter = function(key) {
+    if (window._logFilterKey === key) {
+        window._logFilterKey = null;
+    } else {
+        window._logFilterKey = key;
+    }
+    document.querySelectorAll('#global-log-entries .log-entry').forEach(el => {
+        if (!window._logFilterKey || el.dataset.pr === window._logFilterKey) {
+            el.style.display = '';
+        } else {
+            el.style.display = 'none';
+        }
+    });
+    document.querySelectorAll('#global-log-entries .log-pr-filter').forEach(el => {
+        if (window._logFilterKey && el.textContent.trim() === window._logFilterKey) {
+            el.classList.add('text-purple-300', 'underline');
+        } else {
+            el.classList.remove('text-purple-300', 'underline');
+        }
+    });
+};
+// Re-apply filter after HTMX refresh
+if (window._logFilterKey) { setTimeout(() => window._toggleLogFilter(window._logFilterKey), 50); }
+</script>
 {% endif %}
