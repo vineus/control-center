@@ -66,5 +66,14 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "
 
 
 def run():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Control Center — GitHub PR monitor & auto-fix dashboard")
+    parser.add_argument("-p", "--port", type=int, default=None, help="Port to listen on (default: from config or 8000)")
+    parser.add_argument("--host", default=None, help="Host to bind to (default: from config or 0.0.0.0)")
+    args = parser.parse_args()
+
     settings = Settings.load()
-    uvicorn.run("control_center.main:app", host=settings.host, port=settings.port)
+    host = args.host or settings.host
+    port = args.port or settings.port
+    uvicorn.run("control_center.main:app", host=host, port=port)
