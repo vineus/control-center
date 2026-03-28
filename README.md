@@ -33,20 +33,30 @@ make dev
 
 Open http://localhost:8000
 
+### Daemon mode
+
+```bash
+control-center -d              # start in background
+control-center status          # check if running
+control-center logs            # tail the log file
+control-center stop            # stop the daemon
+```
+
 ### CLI options
 
 ```
 control-center --help
 control-center --port 9000
-control-center --host 127.0.0.1 --port 3000
+control-center -d --port 9000  # daemon on custom port
 ```
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-p`, `--port` | Port to listen on | from config or `8000` |
 | `--host` | Host to bind to | from config or `0.0.0.0` |
+| `-d`, `--daemon` | Run as background daemon | off |
 
-CLI flags override config file values.
+CLI flags override config file values. Daemon logs to `~/.control-center/daemon.log`.
 
 ## Prerequisites
 
