@@ -81,4 +81,21 @@
         </div>
     </section>
 </div>
+
+{# Global agent log #}
+<section class="mt-8">
+    <div class="flex items-center gap-3 mb-3 cursor-pointer group"
+        onclick="document.getElementById('global-log').classList.toggle('hidden'); document.getElementById('log-chevron').classList.toggle('rotate-90')">
+        <svg id="log-chevron" class="w-3 h-3 text-gray-600 transition-transform {% if state.global_log %}rotate-90{% endif %}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+        <h2 class="text-sm font-semibold text-white uppercase tracking-wider">Agent Log</h2>
+        <span class="text-xs text-gray-600 tabular-nums">{{ state.global_log | length }} entries</span>
+    </div>
+    <div id="global-log" class="{% if not state.global_log %}hidden{% endif %} max-h-72 overflow-y-auto rounded-lg bg-surface-light/50 border border-white/5 p-3"
+        hx-get="/partials/global-log"
+        hx-trigger="every 10s"
+        hx-swap="innerHTML">
+        {% set log = state.global_log[-100:] %}
+        {% include "partials/global_log.html" %}
+    </div>
+</section>
 {% endblock %}

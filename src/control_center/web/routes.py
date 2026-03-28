@@ -160,6 +160,12 @@ async def toggle_autofix(request: Request):
     return {"autofix_enabled": settings.autofix_enabled}
 
 
+@router.get("/partials/global-log", response_class=HTMLResponse)
+async def global_log_partial(request: Request):
+    state = _get_state(request)
+    return templates.TemplateResponse(request, "partials/global_log.html", {"log": state.global_log[-100:]})
+
+
 @router.get("/api/autofix/logs/{pr_key:path}")
 async def get_autofix_logs(pr_key: str, request: Request):
     state = _get_state(request)

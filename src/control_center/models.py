@@ -140,6 +140,7 @@ class DashboardState(BaseModel):
     my_prs: list[PRStatus] = []
     review_requests: list[ReviewRequest] = []
     autofix_attempts: dict[str, AutofixAttempt] = {}
+    global_log: list[AgentLogEntry] = []
     last_poll: datetime | None = None
     poll_error: str | None = None
 

@@ -107,16 +107,18 @@ class AutofixManager:
             cost = 0.0
 
             def _log(msg: str) -> None:
-                attempt.log.append(
-                    AgentLogEntry(
-                        timestamp=datetime.now(timezone.utc),
-                        pr_key=pr_key,
-                        message=msg,
-                    )
+                entry = AgentLogEntry(
+                    timestamp=datetime.now(timezone.utc),
+                    pr_key=pr_key,
+                    message=msg,
                 )
-                # Keep log bounded
+                attempt.log.append(entry)
+                self.state.global_log.append(entry)
+                # Keep logs bounded
                 if len(attempt.log) > 200:
                     attempt.log = attempt.log[-200:]
+                if len(self.state.global_log) > 500:
+                    self.state.global_log = self.state.global_log[-500:]
 
             _log(f"Starting {fix_type.value} fix in {worktree}")
             try:
