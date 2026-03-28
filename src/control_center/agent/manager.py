@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import os
+import signal
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, ToolUseBlock, query
@@ -48,7 +51,7 @@ class AutofixManager:
             # PR no longer needs fixing — stop the task if running
             if pr_key in self._running:
                 logger.info("Stopping agent for %s: PR no longer needs fixing", pr_key)
-                await self.stop_fix(pr_key)
+                self.stop_fix(pr_key)
                 # Override the "Stopped by user" message
                 attempt = self.state.autofix_attempts.get(pr_key)
                 if attempt:
@@ -133,21 +136,55 @@ class AutofixManager:
             ),
         )
 
-    async def stop_fix(self, pr_key: str) -> None:
-        task = self._tasks.get(pr_key)
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        self._running.discard(pr_key)
+    def stop_fix(self, pr_key: str) -> None:
+        # Update state immediately (non-blocking)
         attempt = self.state.autofix_attempts.get(pr_key)
         if attempt and attempt.status == AutofixStatus.IN_PROGRESS:
             attempt.status = AutofixStatus.FAILED
             attempt.error = "Stopped by user"
             attempt.finished_at = datetime.now(timezone.utc)
             self.state.autofix_attempts[pr_key] = attempt
+
+        self._running.discard(pr_key)
+        self.skipped.add(pr_key)
+
+        # Kill claude subprocesses
+        self._kill_claude_subprocesses()
+
+        # Cancel the asyncio task (fire and forget)
+        task = self._tasks.pop(pr_key, None)
+        if task and not task.done():
+            task.cancel()
+
+        logger.info("Stopped fix for %s", pr_key)
+
+    @staticmethod
+    def _kill_claude_subprocesses() -> None:
+        """Kill all claude_agent_sdk bundled subprocess spawned by this server."""
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "claude_agent_sdk/_bundled/claude"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return
+            my_pid = os.getpid()
+            for line in result.stdout.strip().split("\n"):
+                pid_str = line.strip()
+                if not pid_str:
+                    continue
+                pid = int(pid_str)
+                if pid == my_pid:
+                    continue
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    logger.info("Killed claude subprocess PID %d", pid)
+                except ProcessLookupError:
+                    pass
+        except Exception:
+            logger.exception("Failed to kill claude subprocesses")
 
     def skip_pr(self, pr_key: str) -> None:
         self.skipped.add(pr_key)
@@ -234,6 +271,12 @@ class AutofixManager:
             _log(f"Succeeded (cost: ${cost:.3f})")
             logger.info("Auto-fix succeeded for %s (cost: $%.4f)", pr_key, cost)
 
+        except asyncio.CancelledError:
+            attempt.status = AutofixStatus.FAILED
+            attempt.error = "Stopped by user"
+            _log("Stopped by user")
+            logger.info("Auto-fix cancelled for %s", pr_key)
+
         except Exception as e:
             attempt.status = AutofixStatus.FAILED
             attempt.error = str(e)[:500]
@@ -244,3 +287,4 @@ class AutofixManager:
             attempt.finished_at = datetime.now(timezone.utc)
             self.state.autofix_attempts[pr_key] = attempt
             self._running.discard(pr_key)
+            self._tasks.pop(pr_key, None)

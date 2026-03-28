@@ -93,7 +93,7 @@
     {% if autofix_enabled is defined and autofix_enabled %}
     <div class="mt-3 flex items-center gap-2">
         {% if af and af.status.value == "in_progress" %}
-        <button onclick="event.stopPropagation(); fetch('/api/autofix/stop/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}); this.textContent='stopping...'; this.disabled=true"
+        <button onclick="event.stopPropagation(); fetch('/api/autofix/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'stop',pr_key:'{{ pr.pr_key }}'})}).then(()=>location.reload()); this.textContent='stopping...'; this.disabled=true"
             class="btn btn-danger text-[10px]" title="Cancel the running auto-fix agent">stop</button>
         {% elif pr.needs_fix and not is_skipped %}
         <button onclick="event.stopPropagation(); this.textContent='starting...'; this.disabled=true; fetch('/api/autofix/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}).then(()=>{this.textContent='running...'})"
@@ -101,11 +101,11 @@
             title="{% if pr.mergeable == 'CONFLICTING' %}Rebase and resolve merge conflicts{% elif pr.ci_status.value == 'failure' %}Analyze CI logs and fix failing checks{% elif pr.is_draft %}Continue implementing this draft PR{% else %}Auto-fix this PR{% endif %}">
             {% if pr.mergeable == "CONFLICTING" %}resolve conflicts{% elif pr.ci_status.value == "failure" %}fix ci{% elif pr.is_draft %}continue work{% else %}auto-fix{% endif %}
         </button>
-        <button onclick="event.stopPropagation(); fetch('/api/autofix/skip/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}); this.closest('.flex').innerHTML='<span class=\'text-[10px] te-faint\'>skipped</span>'"
+        <button onclick="event.stopPropagation(); fetch('/api/autofix/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'skip',pr_key:'{{ pr.pr_key }}'})}).then(()=>{this.closest('.flex').innerHTML='<span class=\'text-[10px] te-faint\'>skipped</span>'})"
             class="btn text-[10px]" title="Exclude this PR from automatic fixing">skip</button>
         {% elif is_skipped %}
         <span class="text-[10px] te-faint">skipped</span>
-        <button onclick="event.stopPropagation(); fetch('/api/autofix/unskip/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}); location.reload()"
+        <button onclick="event.stopPropagation(); fetch('/api/autofix/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'unskip',pr_key:'{{ pr.pr_key }}'})}).then(()=>location.reload())"
             class="btn text-[10px]" title="Re-enable automatic fixing for this PR">resume</button>
         {% endif %}
     </div>

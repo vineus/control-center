@@ -276,25 +276,20 @@ async def trigger_autofix(repo: str, pr_number: int, request: Request):
     return {"status": attempt.status.value, "pr_key": attempt.pr_key}
 
 
-@router.post("/api/autofix/stop/{repo:path}/{pr_number}")
-async def stop_autofix(repo: str, pr_number: int, request: Request):
+@router.post("/api/autofix/action")
+async def autofix_action(request: Request):
+    data = await request.json()
+    action = data.get("action", "")
+    pr_key = data.get("pr_key", "")
     manager = request.app.state.autofix_manager
-    pr_key = f"{repo}#{pr_number}"
-    await manager.stop_fix(pr_key)
-    return {"status": "stopped", "pr_key": pr_key}
 
-
-@router.post("/api/autofix/skip/{repo:path}/{pr_number}")
-async def skip_autofix(repo: str, pr_number: int, request: Request):
-    manager = request.app.state.autofix_manager
-    pr_key = f"{repo}#{pr_number}"
-    manager.skip_pr(pr_key)
-    return {"status": "skipped", "pr_key": pr_key}
-
-
-@router.post("/api/autofix/unskip/{repo:path}/{pr_number}")
-async def unskip_autofix(repo: str, pr_number: int, request: Request):
-    manager = request.app.state.autofix_manager
-    pr_key = f"{repo}#{pr_number}"
-    manager.unskip_pr(pr_key)
-    return {"status": "unskipped", "pr_key": pr_key}
+    if action == "stop":
+        manager.stop_fix(pr_key)
+        return {"status": "stopped", "pr_key": pr_key}
+    elif action == "skip":
+        manager.skip_pr(pr_key)
+        return {"status": "skipped", "pr_key": pr_key}
+    elif action == "unskip":
+        manager.unskip_pr(pr_key)
+        return {"status": "unskipped", "pr_key": pr_key}
+    return {"error": "unknown action"}
