@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 await asyncio.to_thread(poller._poll_once)
+                autofix_manager.reconcile_status(state.my_prs)
                 await autofix_manager.check_and_fix(state.my_prs)
                 await autofix_manager.cleanup_worktrees(state.my_prs)
             except Exception:

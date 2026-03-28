@@ -35,6 +35,22 @@ class AutofixManager:
                 continue
             asyncio.create_task(self._run_fix(pr, fix_type))
 
+    def reconcile_status(self, prs: list[PRStatus]) -> None:
+        """Clear stale autofix attempts for PRs that no longer need fixing."""
+        pr_map = {pr.pr_key: pr for pr in prs}
+        for pr_key, attempt in list(self.state.autofix_attempts.items()):
+            if attempt.status != AutofixStatus.IN_PROGRESS:
+                continue
+            if pr_key in self._running:
+                continue
+            # In-progress but not actually running — mark as failed (stale)
+            pr = pr_map.get(pr_key)
+            if pr is None or not pr.needs_fix:
+                attempt.status = AutofixStatus.SUCCEEDED
+                attempt.finished_at = datetime.now(timezone.utc)
+                self.state.autofix_attempts[pr_key] = attempt
+                logger.info("Reconciled %s: PR no longer needs fixing", pr_key)
+
     async def cleanup_worktrees(self, prs: list[PRStatus]) -> None:
         """Remove worktrees for PRs that no longer need fixing (closed, merged, CI green)."""
         try:
