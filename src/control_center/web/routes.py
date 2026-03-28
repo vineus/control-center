@@ -214,10 +214,14 @@ async def save_settings(request: Request):
     )
 
 
+THEMES = ["dark", "light", "phosphor", "blueprint", "paper", "concrete", "amber"]
+
+
 @router.post("/api/theme/toggle")
 async def toggle_theme(request: Request):
     settings = request.app.state.settings
-    settings.theme = "light" if settings.theme == "dark" else "dark"
+    idx = THEMES.index(settings.theme) if settings.theme in THEMES else 0
+    settings.theme = THEMES[(idx + 1) % len(THEMES)]
     settings.save()
     return {"theme": settings.theme}
 

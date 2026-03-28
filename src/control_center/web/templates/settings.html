@@ -28,6 +28,11 @@
                     <select name="theme" class="w-full">
                         <option value="dark" {% if settings.theme == "dark" %}selected{% endif %}>dark</option>
                         <option value="light" {% if settings.theme == "light" %}selected{% endif %}>light</option>
+                        <option value="phosphor" {% if settings.theme == "phosphor" %}selected{% endif %}>phosphor — green terminal</option>
+                        <option value="blueprint" {% if settings.theme == "blueprint" %}selected{% endif %}>blueprint — deep blue</option>
+                        <option value="paper" {% if settings.theme == "paper" %}selected{% endif %}>paper — warm cream</option>
+                        <option value="concrete" {% if settings.theme == "concrete" %}selected{% endif %}>concrete — mid-gray</option>
+                        <option value="amber" {% if settings.theme == "amber" %}selected{% endif %}>amber — warm dark</option>
                     </select>
                 </div>
                 <div>
