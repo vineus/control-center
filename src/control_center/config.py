@@ -114,18 +114,22 @@ class Settings(BaseSettings):
     def save(self) -> None:
         """Write current settings back to config file."""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+        def _esc(s: str) -> str:
+            return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
         content = f"""\
 # Control Center configuration
 
 [github]
-username = "{self.github_username}"
-default_org = "{self.default_org}"
+username = "{_esc(self.github_username)}"
+default_org = "{_esc(self.default_org)}"
 
 [ui]
-theme = "{self.theme}"
+theme = "{_esc(self.theme)}"
 
 [server]
-host = "{self.host}"
+host = "{_esc(self.host)}"
 port = {self.port}
 poll_interval_seconds = {self.poll_interval_seconds}
 
@@ -134,8 +138,8 @@ enabled = {str(self.autofix_enabled).lower()}
 max_budget_usd = {self.autofix_max_budget_usd}
 max_turns = {self.autofix_max_turns}
 cooldown_minutes = {self.autofix_cooldown_minutes}
-model = "{self.autofix_model}"
-repos_base_dir = "{self.repos_base_dir}"
+model = "{_esc(self.autofix_model)}"
+repos_base_dir = "{_esc(self.repos_base_dir)}"
 """
         CONFIG_FILE.write_text(content)
         logger.info("Config saved to %s", CONFIG_FILE)

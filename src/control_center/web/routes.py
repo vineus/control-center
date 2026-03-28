@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
@@ -208,32 +208,11 @@ async def save_settings_api(request: Request):
     return {"status": "saved"}
 
 
-THEMES = ["dark", "light", "phosphor", "blueprint", "paper", "concrete", "amber"]
-
-
-@router.post("/api/theme/set")
-async def set_theme(request: Request):
-    settings = request.app.state.settings
-    theme = request.query_params.get("theme", "dark")
-    if theme in THEMES:
-        settings.theme = theme
-        settings.save()
-    return {"theme": settings.theme}
-
-
-@router.post("/api/theme/toggle")
-async def toggle_theme(request: Request):
-    settings = request.app.state.settings
-    idx = THEMES.index(settings.theme) if settings.theme in THEMES else 0
-    settings.theme = THEMES[(idx + 1) % len(THEMES)]
-    settings.save()
-    return {"theme": settings.theme}
-
-
 @router.post("/api/autofix/toggle")
 async def toggle_autofix(request: Request):
     settings = request.app.state.settings
     settings.autofix_enabled = not settings.autofix_enabled
+    settings.save()
     return {"autofix_enabled": settings.autofix_enabled}
 
 
@@ -270,7 +249,7 @@ async def trigger_autofix(repo: str, pr_number: int, request: Request):
 
     pr = next((p for p in state.my_prs if p.repo == repo and p.number == pr_number), None)
     if pr is None:
-        return {"error": f"PR {repo}#{pr_number} not found"}
+        return JSONResponse({"error": f"PR {repo}#{pr_number} not found"}, status_code=404)
 
     attempt = await manager.trigger_fix(pr)
     return {"status": attempt.status.value, "pr_key": attempt.pr_key}
@@ -292,4 +271,4 @@ async def autofix_action(request: Request):
     elif action == "unskip":
         manager.unskip_pr(pr_key)
         return {"status": "unskipped", "pr_key": pr_key}
-    return {"error": "unknown action"}
+    return JSONResponse({"error": "unknown action"}, status_code=400)

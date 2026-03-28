@@ -36,7 +36,8 @@ class AutofixManager:
             fix_type = self._should_fix(pr)
             if fix_type is None:
                 continue
-            asyncio.create_task(self._run_fix(pr, fix_type))
+            task = asyncio.create_task(self._run_fix(pr, fix_type))
+            self._tasks[pr.pr_key] = task
 
     async def reconcile_status(self, prs: list[PRStatus]) -> None:
         """Clear stale autofix attempts for PRs that no longer need fixing."""
@@ -212,9 +213,9 @@ class AutofixManager:
             )
             attempt.log.append(entry)
             self.state.global_log.append(entry)
-            if len(attempt.log) > 200:
+            if len(attempt.log) > 250:
                 attempt.log = attempt.log[-200:]
-            if len(self.state.global_log) > 500:
+            if len(self.state.global_log) > 600:
                 self.state.global_log = self.state.global_log[-500:]
 
         _log(f"Starting {fix_type.value} fix for {pr.repo}#{pr.number}")
@@ -272,8 +273,10 @@ class AutofixManager:
             logger.info("Auto-fix succeeded for %s (cost: $%.4f)", pr_key, cost)
 
         except asyncio.CancelledError:
-            attempt.status = AutofixStatus.FAILED
-            attempt.error = "Stopped by user"
+            # stop_fix() already set status to FAILED — only update if still in progress
+            if attempt.status == AutofixStatus.IN_PROGRESS:
+                attempt.status = AutofixStatus.FAILED
+                attempt.error = "Stopped by user"
             _log("Stopped by user")
             logger.info("Auto-fix cancelled for %s", pr_key)
 

@@ -73,17 +73,6 @@ def prepare_worktree(repo: str, branch: str, settings: Settings) -> Path:
     return worktree_dir
 
 
-def cleanup_worktree(repo: str, worktree_path: Path, settings: Settings) -> None:
-    base = Path(settings.repos_base_dir).expanduser()
-    repo_dir = base / repo.replace("/", "_")
-    if repo_dir.exists():
-        _run(["git", "worktree", "remove", str(worktree_path), "--force"], cwd=str(repo_dir))
-    import shutil
-
-    if worktree_path.exists():
-        shutil.rmtree(worktree_path, ignore_errors=True)
-
-
 def cleanup_stale_worktrees(
     active_worktree_paths: set[str],
     open_pr_branches: set[str],
@@ -123,10 +112,11 @@ def cleanup_stale_worktrees(
             shutil.rmtree(wt, ignore_errors=True)
         cleaned.append(str(wt))
 
-    # Prune all repos
-    for repo_dir in base.iterdir():
-        if repo_dir.is_dir() and repo_dir.name != "worktrees":
-            _run(["git", "worktree", "prune"], cwd=str(repo_dir))
+    # Prune repos only if we cleaned something
+    if cleaned:
+        for repo_dir in base.iterdir():
+            if repo_dir.is_dir() and repo_dir.name != "worktrees":
+                _run(["git", "worktree", "prune"], cwd=str(repo_dir))
 
     return cleaned
 
