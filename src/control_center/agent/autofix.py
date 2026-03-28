@@ -77,12 +77,14 @@ def cleanup_worktree(repo: str, worktree_path: Path, settings: Settings) -> None
 
 
 def cleanup_stale_worktrees(
+    active_worktree_paths: set[str],
     open_pr_branches: set[str],
-    running_pr_keys: set[str],
     settings: Settings,
 ) -> list[str]:
-    """Remove worktrees for PRs that are closed/merged or have passing CI.
+    """Remove worktrees not actively used by autofix and not belonging to open PRs.
     Returns list of cleaned up worktree paths."""
+    import shutil
+
     base = Path(settings.repos_base_dir).expanduser()
     worktrees_dir = base / "worktrees"
     if not worktrees_dir.exists():
@@ -93,35 +95,22 @@ def cleanup_stale_worktrees(
         if not wt.is_dir():
             continue
 
-        # Parse worktree name: {org}_{repo}_{branch}
-        # The branch is everything after the second underscore-separated repo part
-        # e.g. "vibe-ad_clear-bidder_vdl_fix-something" -> branch = "vdl/fix-something"
-        # But we stored it as repo.replace("/","_") + "_" + branch
-        # Easiest: check if any open PR branch matches
+        # Never touch worktrees actively used by autofix
+        if str(wt) in active_worktree_paths:
+            continue
+
+        # Keep worktrees for branches that belong to open PRs
         wt_name = wt.name
-
-        # Check if this worktree belongs to a currently running fix
-        is_running = any(wt_name in key.replace("/", "_").replace("#", "_") for key in running_pr_keys)
-        if is_running:
+        if any(branch in wt_name for branch in open_pr_branches):
             continue
 
-        # Check if the branch is still in the open PRs set
-        is_open = any(branch in wt_name for branch in open_pr_branches)
-        if is_open:
-            continue
-
-        # This worktree is for a PR that's no longer open — clean it up
+        # This worktree is stale — clean it up
         logger.info("Cleaning up stale worktree: %s", wt)
-        # Find the parent repo dir to run git worktree remove
-        # Try all repo dirs
         for repo_dir in base.iterdir():
             if repo_dir.is_dir() and repo_dir.name != "worktrees":
                 result = _run(["git", "worktree", "remove", str(wt), "--force"], cwd=str(repo_dir))
                 if result.returncode == 0:
                     break
-        # Fallback: just delete the directory
-        import shutil
-
         if wt.exists():
             shutil.rmtree(wt, ignore_errors=True)
         cleaned.append(str(wt))

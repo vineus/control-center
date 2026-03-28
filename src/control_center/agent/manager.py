@@ -65,16 +65,19 @@ class AutofixManager:
     async def cleanup_worktrees(self, prs: list[PRStatus]) -> None:
         """Remove worktrees for PRs that no longer need fixing (closed, merged, CI green)."""
         try:
-            # Collect branches of open PRs that still need work
-            open_branches = set()
-            for pr in prs:
-                if pr.needs_fix:
-                    open_branches.add(pr.head_ref)
+            # Collect all open PR branches (keep their worktrees)
+            open_branches = {pr.head_ref for pr in prs}
+
+            # Collect worktree paths actively used by autofix
+            active_paths = set()
+            for attempt in self.state.autofix_attempts.values():
+                if attempt.worktree_path and attempt.status == AutofixStatus.IN_PROGRESS:
+                    active_paths.add(attempt.worktree_path)
 
             cleaned = await asyncio.to_thread(
                 cleanup_stale_worktrees,
+                active_paths,
                 open_branches,
-                self._running,
                 self.settings,
             )
             if cleaned:
