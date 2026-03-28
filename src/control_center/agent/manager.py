@@ -35,21 +35,32 @@ class AutofixManager:
                 continue
             asyncio.create_task(self._run_fix(pr, fix_type))
 
-    def reconcile_status(self, prs: list[PRStatus]) -> None:
+    async def reconcile_status(self, prs: list[PRStatus]) -> None:
         """Clear stale autofix attempts for PRs that no longer need fixing."""
         pr_map = {pr.pr_key: pr for pr in prs}
         for pr_key, attempt in list(self.state.autofix_attempts.items()):
             if attempt.status != AutofixStatus.IN_PROGRESS:
                 continue
-            if pr_key in self._running:
-                continue
-            # In-progress but not actually running — mark as failed (stale)
             pr = pr_map.get(pr_key)
-            if pr is None or not pr.needs_fix:
+            if pr is not None and pr.needs_fix:
+                continue
+
+            # PR no longer needs fixing — stop the task if running
+            if pr_key in self._running:
+                logger.info("Stopping agent for %s: PR no longer needs fixing", pr_key)
+                await self.stop_fix(pr_key)
+                # Override the "Stopped by user" message
+                attempt = self.state.autofix_attempts.get(pr_key)
+                if attempt:
+                    attempt.status = AutofixStatus.SUCCEEDED
+                    attempt.error = None
+                    self.state.autofix_attempts[pr_key] = attempt
+            else:
                 attempt.status = AutofixStatus.SUCCEEDED
                 attempt.finished_at = datetime.now(timezone.utc)
                 self.state.autofix_attempts[pr_key] = attempt
-                logger.info("Reconciled %s: PR no longer needs fixing", pr_key)
+
+            logger.info("Reconciled %s: PR no longer needs fixing", pr_key)
 
     async def cleanup_worktrees(self, prs: list[PRStatus]) -> None:
         """Remove worktrees for PRs that no longer need fixing (closed, merged, CI green)."""
