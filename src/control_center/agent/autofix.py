@@ -16,8 +16,13 @@ def _run(cmd: list[str], cwd: str | None = None, timeout: int = 30) -> subproces
 def prepare_worktree(repo: str, branch: str, settings: Settings) -> Path:
     base = Path(settings.repos_base_dir).expanduser()
     repo_dir = base / repo.replace("/", "_")
-    worktree_dir = base / "worktrees" / f"{repo.replace('/', '_')}_{branch}"
+    worktrees_dir = base / "worktrees"
+    worktree_dir = worktrees_dir / f"{repo.replace('/', '_')}_{branch}"
 
+    # Ensure directories exist
+    worktrees_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clone repo if needed
     if not repo_dir.exists():
         logger.info("Cloning %s into %s", repo, repo_dir)
         repo_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -25,16 +30,35 @@ def prepare_worktree(repo: str, branch: str, settings: Settings) -> Path:
         if result.returncode != 0:
             raise RuntimeError(f"Clone failed: {result.stderr}")
 
+    # Prune stale worktrees (e.g. from previous crashed runs)
+    _run(["git", "worktree", "prune"], cwd=str(repo_dir))
+
+    # If worktree dir exists but is broken, remove it
+    if worktree_dir.exists():
+        check = _run(["git", "rev-parse", "--git-dir"], cwd=str(worktree_dir))
+        if check.returncode != 0:
+            logger.warning("Removing broken worktree at %s", worktree_dir)
+            _run(["git", "worktree", "remove", str(worktree_dir), "--force"], cwd=str(repo_dir))
+            import shutil
+
+            if worktree_dir.exists():
+                shutil.rmtree(worktree_dir)
+
+    # Create worktree if it doesn't exist
     if not worktree_dir.exists():
-        _run(["git", "fetch", "origin", branch], cwd=str(repo_dir), timeout=60)
+        fetch = _run(["git", "fetch", "origin", branch], cwd=str(repo_dir), timeout=60)
+        if fetch.returncode != 0:
+            raise RuntimeError(f"Fetch failed: {fetch.stderr}")
+
+        # Use detached HEAD to avoid "already checked out" errors
         result = _run(
-            ["git", "worktree", "add", str(worktree_dir), f"origin/{branch}"],
+            ["git", "worktree", "add", "--detach", str(worktree_dir), f"origin/{branch}"],
             cwd=str(repo_dir),
         )
         if result.returncode != 0:
             raise RuntimeError(f"Worktree creation failed: {result.stderr}")
 
-    # Ensure we're on the right branch and up to date
+    # Checkout the branch and pull latest
     _run(["git", "checkout", branch], cwd=str(worktree_dir))
     _run(["git", "pull", "--rebase", "origin", branch], cwd=str(worktree_dir), timeout=60)
 
