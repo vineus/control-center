@@ -11,23 +11,23 @@
     <div class="flex items-center gap-2 min-w-0">
         <a href="{{ pr.url }}" target="_blank" class="text-[13px] te-text truncate flex-1 hover:text-accent transition">{{ pr.title }}</a>
         {% if pr.is_draft %}
-        <span class="badge">draft</span>
+        <span class="badge" title="This PR is marked as draft">draft</span>
         {% endif %}
         {# CI status #}
         {% if pr.ci_status.value == "success" %}
-        <span class="text-[10px] te-success">ci:pass</span>
+        <span class="text-[10px] te-success" title="All CI checks passing">ci:pass</span>
         {% elif pr.ci_status.value == "failure" %}
-        <span class="text-[10px] te-error">ci:fail</span>
+        <span class="text-[10px] te-error" title="One or more CI checks failing">ci:fail</span>
         {% elif pr.ci_status.value == "pending" %}
-        <span class="text-[10px] te-warning">ci:...</span>
+        <span class="text-[10px] te-warning" title="CI checks running">ci:...</span>
         {% else %}
-        <span class="text-[10px] te-faint">ci:?</span>
+        <span class="text-[10px] te-faint" title="CI status unknown">ci:?</span>
         {% endif %}
         {# Review status #}
         {% if pr.review_status.value == "approved" %}
-        <span class="badge badge-green">approved</span>
+        <span class="badge badge-green" title="PR has been approved by reviewers">approved</span>
         {% elif pr.review_status.value == "changes_requested" %}
-        <span class="badge badge-red">changes</span>
+        <span class="badge badge-red" title="Reviewers requested changes">changes</span>
         {% endif %}
     </div>
 
@@ -40,7 +40,8 @@
         <span>&rarr;</span>
         <span title="Updated {{ pr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.updated_at | timeago }}</span>
         {% set conf_pct = (pr.merge_confidence * 100) | int %}
-        <span class="ml-auto tabular-nums {% if conf_pct >= 80 %}te-success{% elif conf_pct >= 50 %}te-warning{% else %}te-muted{% endif %}">{{ conf_pct }}%</span>
+        <span class="ml-auto tabular-nums {% if conf_pct >= 80 %}te-success{% elif conf_pct >= 50 %}te-warning{% else %}te-muted{% endif %}"
+            title="Merge confidence: CI {% if pr.ci_status.value == 'success' %}pass (+40%){% else %}not passing{% endif %}, review {% if pr.review_status.value == 'approved' %}approved (+40%){% elif pr.review_status.value == 'changes_requested' %}changes requested{% else %}pending (+20%){% endif %}{% if pr.is_draft %}, draft (halved){% endif %}">{{ conf_pct }}%</span>
     </div>
 
     {# Issues #}
@@ -77,7 +78,7 @@
             <span class="copy-ok hidden text-[10px] te-success">copied</span>
         </div>
         {% endif %}
-        <button class="btn text-[10px]"
+        <button class="btn text-[10px]" title="Show agent activity log for this PR"
             onclick="event.stopPropagation(); const el=this.closest('div[class*=card]').querySelector('.agent-log'); el.classList.toggle('hidden'); if(!el.classList.contains('hidden')){htmx.ajax('GET','/partials/autofix-log?key={{ pr.pr_key | urlencode }}',{target:el, swap:'innerHTML'})}">
             log
         </button>
@@ -93,18 +94,19 @@
     <div class="mt-3 flex items-center gap-2">
         {% if af and af.status.value == "in_progress" %}
         <button onclick="event.stopPropagation(); fetch('/api/autofix/stop/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}); this.textContent='stopping...'; this.disabled=true"
-            class="btn btn-danger text-[10px]">stop</button>
+            class="btn btn-danger text-[10px]" title="Cancel the running auto-fix agent">stop</button>
         {% elif pr.needs_fix and not is_skipped %}
         <button onclick="event.stopPropagation(); this.textContent='starting...'; this.disabled=true; fetch('/api/autofix/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}).then(()=>{this.textContent='running...'})"
-            class="btn btn-accent text-[10px]">
+            class="btn btn-accent text-[10px]"
+            title="{% if pr.mergeable == 'CONFLICTING' %}Rebase and resolve merge conflicts{% elif pr.ci_status.value == 'failure' %}Analyze CI logs and fix failing checks{% elif pr.is_draft %}Continue implementing this draft PR{% else %}Auto-fix this PR{% endif %}">
             {% if pr.mergeable == "CONFLICTING" %}resolve conflicts{% elif pr.ci_status.value == "failure" %}fix ci{% elif pr.is_draft %}continue work{% else %}auto-fix{% endif %}
         </button>
         <button onclick="event.stopPropagation(); fetch('/api/autofix/skip/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}); this.closest('.flex').innerHTML='<span class=\'text-[10px] te-faint\'>skipped</span>'"
-            class="btn text-[10px]" title="Exclude from auto-fix">skip</button>
+            class="btn text-[10px]" title="Exclude this PR from automatic fixing">skip</button>
         {% elif is_skipped %}
         <span class="text-[10px] te-faint">skipped</span>
         <button onclick="event.stopPropagation(); fetch('/api/autofix/unskip/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}); location.reload()"
-            class="btn text-[10px]">resume</button>
+            class="btn text-[10px]" title="Re-enable automatic fixing for this PR">resume</button>
         {% endif %}
     </div>
     {% endif %}
@@ -132,7 +134,7 @@
     {% endif %}
 
     {% if pr.ready_to_merge %}
-    <div class="mt-2 text-[11px] te-success font-bold">// ready to merge</div>
+    <div class="mt-2 text-[11px] te-success font-bold" title="CI passing, approved, not a draft, no conflicts">// ready to merge</div>
     {% endif %}
 </div>
 {% endfor %}

@@ -10,11 +10,11 @@
     <div class="flex items-center gap-2 min-w-0">
         <a href="{{ rr.url }}" target="_blank" class="text-[13px] te-text truncate flex-1 hover:text-accent transition">{{ rr.title }}</a>
         {% if rr.priority == "high" %}
-        <span class="badge badge-red">stale</span>
+        <span class="badge badge-red" title="Review requested more than 48h ago">stale</span>
         {% elif rr.priority == "medium" %}
-        <span class="badge badge-yellow">aging</span>
+        <span class="badge badge-yellow" title="Review requested more than 24h ago">aging</span>
         {% else %}
-        <span class="badge">new</span>
+        <span class="badge" title="Review requested less than 24h ago">new</span>
         {% endif %}
     </div>
 

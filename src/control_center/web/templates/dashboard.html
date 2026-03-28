@@ -14,26 +14,26 @@
 
 <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-8">
     <a href="{% if is_ready %}/{% else %}/?sort=confidence&ci=success&review=approved{% endif %}"
-        class="stat {% if is_ready %}stat-active{% endif %} block">
+        class="stat {% if is_ready %}stat-active{% endif %} block" title="PRs with passing CI + approved review — click to filter">
         <div class="text-xl font-bold te-success tabular-nums">{{ ready_count }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">ready to merge</div>
     </a>
     <a href="{% if is_failing %}/{% else %}/?ci=failure{% endif %}"
-        class="stat {% if is_failing %}stat-active{% endif %} block">
+        class="stat {% if is_failing %}stat-active{% endif %} block" title="PRs where CI checks are failing — click to filter">
         <div class="text-xl font-bold te-error tabular-nums">{{ failing_count }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">ci failing</div>
     </a>
     <a href="{% if is_changes %}/{% else %}/?review=changes_requested{% endif %}"
-        class="stat {% if is_changes %}stat-active{% endif %} block">
+        class="stat {% if is_changes %}stat-active{% endif %} block" title="PRs where reviewers requested changes — click to filter">
         <div class="text-xl font-bold te-warning tabular-nums">{{ changes_count }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">changes req.</div>
     </a>
     <a href="{% if is_fixing %}/{% else %}/?fixing=true{% endif %}"
-        class="stat {% if is_fixing %}stat-active{% endif %} block">
+        class="stat {% if is_fixing %}stat-active{% endif %} block" title="PRs currently being fixed by the Claude agent — click to filter">
         <div class="text-xl font-bold te-purple tabular-nums">{{ fixing_count | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">agent fixing</div>
     </a>
-    <div class="stat">
+    <div class="stat" title="PRs from others where your review is requested">
         <div class="text-xl font-bold text-accent tabular-nums">{{ reviews | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">review requests</div>
     </div>
