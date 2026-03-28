@@ -127,7 +127,7 @@
             Log
         </button>
     </div>
-    <div class="agent-log {% if af.status.value != 'in_progress' %}hidden{% endif %} mt-2 max-h-48 overflow-y-auto rounded bg-black/30 px-3 py-2 border border-white/5"
+    <div class="agent-log hidden mt-2 max-h-48 overflow-y-auto rounded bg-black/30 px-3 py-2 border border-white/5"
         hx-get="/partials/autofix-log?key={{ pr.pr_key | urlencode }}" hx-trigger="every 5s" hx-swap="innerHTML">
     </div>
     {% endif %}
