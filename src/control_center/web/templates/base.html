@@ -12,16 +12,40 @@
             theme: {
                 extend: {
                     colors: {
-                        surface: { DEFAULT: '#0f172a', light: '#1e293b', lighter: '#334155' },
+                        bg: '#0a0e1a',
+                        surface: { DEFAULT: '#111827', light: '#1a2235', lighter: '#252f45' },
+                        accent: '#3b82f6',
                     }
                 }
             }
         }
     </script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         .htmx-indicator { opacity: 0; transition: opacity 200ms; }
         .htmx-request .htmx-indicator { opacity: 1; }
+        .card-glow-green { box-shadow: inset 3px 0 0 #22c55e, 0 0 0 1px rgba(34,197,94,0.1); }
+        .card-glow-red { box-shadow: inset 3px 0 0 #ef4444, 0 0 0 1px rgba(239,68,68,0.1); }
+        .card-glow-yellow { box-shadow: inset 3px 0 0 #eab308, 0 0 0 1px rgba(234,179,8,0.1); }
+        .card-glow-gray { box-shadow: inset 3px 0 0 #6b7280, 0 0 0 1px rgba(107,114,128,0.1); }
+        .card-merge-ready {
+            box-shadow: inset 3px 0 0 #22c55e, 0 0 12px rgba(34,197,94,0.08), 0 0 0 1px rgba(34,197,94,0.15);
+            background: linear-gradient(135deg, rgba(34,197,94,0.04) 0%, transparent 60%);
+        }
+        .stat-card { backdrop-filter: blur(8px); }
+        select, input[type="text"] { cursor: pointer; }
+        .filter-pill {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239ca3af' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            padding-right: 24px;
+        }
+        .section-scroll { max-height: calc(100vh - 220px); overflow-y: auto; }
+        .section-scroll::-webkit-scrollbar { width: 4px; }
+        .section-scroll::-webkit-scrollbar-track { background: transparent; }
+        .section-scroll::-webkit-scrollbar-thumb { background: #252f45; border-radius: 2px; }
     </style>
     <script>
         function applyFilters() {
@@ -41,88 +65,74 @@
             const qs = params.toString();
             window.location.href = '/' + (qs ? '?' + qs : '');
         }
-        function clearFilters() {
-            window.location.href = '/';
-        }
+        function clearFilters() { window.location.href = '/'; }
         let searchTimeout;
-        function onSearchInput() {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(applyFilters, 400);
-        }
+        function onSearchInput() { clearTimeout(searchTimeout); searchTimeout = setTimeout(applyFilters, 400); }
     </script>
 </head>
-<body class="bg-surface text-gray-100 min-h-screen">
-    <nav class="border-b border-gray-700 px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <h1 class="text-xl font-semibold tracking-tight">Control Center</h1>
+<body class="bg-bg text-gray-200 min-h-screen">
+    {% set f = filters if filters is defined else {} %}
+    {# Header #}
+    <nav class="px-6 py-3 flex items-center justify-between bg-surface/80 backdrop-blur-sm border-b border-white/5 sticky top-0 z-10">
+        <div class="flex items-center gap-2.5">
+            <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <h1 class="text-base font-semibold tracking-tight text-white">Control Center</h1>
         </div>
-        <div class="flex items-center gap-4 text-sm text-gray-400">
-            {% if state and state.last_poll %}
-            <span>Last poll: {{ state.last_poll.strftime('%H:%M:%S UTC') }}</span>
+        <div class="flex items-center gap-3 text-xs text-gray-500">
+            {% if state and state.orgs %}
+            <select id="filter-org" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
+                <option value="">All orgs</option>
+                {% for org in state.orgs %}
+                <option value="{{ org }}" {% if f.org == org %}selected{% endif %}>{{ org }}</option>
+                {% endfor %}
+            </select>
             {% endif %}
-            <button
-                hx-post="/api/poll"
-                hx-swap="none"
-                class="px-3 py-1.5 bg-surface-lighter rounded-md hover:bg-gray-600 transition text-gray-200"
-            >
+            {% if state and state.last_poll %}
+            <span>{{ state.last_poll.strftime('%H:%M UTC') }}</span>
+            {% endif %}
+            <button hx-post="/api/poll" hx-swap="none"
+                class="px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 transition text-gray-400 hover:text-gray-200 text-xs">
+                <svg class="w-3.5 h-3.5 inline -mt-0.5 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 Refresh
             </button>
         </div>
     </nav>
 
     {# Filter bar #}
-    {% set f = filters if filters is defined else {} %}
-    <div class="border-b border-gray-700/50 px-6 py-3 flex items-center gap-3 flex-wrap bg-surface-light/30">
-        <input
-            id="filter-search"
-            type="text"
-            placeholder="Search PRs..."
-            value="{{ f.search or '' }}"
-            oninput="onSearchInput()"
-            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500 w-48"
-        >
-        {% if state and state.orgs %}
-        <select id="filter-org" onchange="applyFilters()"
-            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
-            <option value="">All orgs</option>
-            {% for org in state.orgs %}
-            <option value="{{ org }}" {% if f.org == org %}selected{% endif %}>{{ org }}</option>
-            {% endfor %}
+    <div class="px-6 py-2 flex items-center gap-2 flex-wrap bg-surface/40 border-b border-white/5">
+        <svg class="w-3.5 h-3.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input id="filter-search" type="text" placeholder="Search..." value="{{ f.search or '' }}" oninput="onSearchInput()"
+            class="bg-transparent border-none text-gray-300 text-xs focus:outline-none w-32 placeholder-gray-600">
+        <span class="w-px h-4 bg-white/10"></span>
+        <select id="filter-ci" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
+            <option value="">CI: All</option>
+            <option value="success" {% if f.ci == 'success' %}selected{% endif %}>CI: Pass</option>
+            <option value="failure" {% if f.ci == 'failure' %}selected{% endif %}>CI: Fail</option>
+            <option value="pending" {% if f.ci == 'pending' %}selected{% endif %}>CI: Pending</option>
         </select>
-        {% endif %}
-        <select id="filter-ci" onchange="applyFilters()"
-            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
-            <option value="">All CI</option>
-            <option value="success" {% if f.ci == 'success' %}selected{% endif %}>CI Passing</option>
-            <option value="failure" {% if f.ci == 'failure' %}selected{% endif %}>CI Failing</option>
-            <option value="pending" {% if f.ci == 'pending' %}selected{% endif %}>CI Pending</option>
-        </select>
-        <select id="filter-review" onchange="applyFilters()"
-            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
-            <option value="">All reviews</option>
+        <select id="filter-review" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
+            <option value="">Review: All</option>
             <option value="approved" {% if f.review == 'approved' %}selected{% endif %}>Approved</option>
-            <option value="changes_requested" {% if f.review == 'changes_requested' %}selected{% endif %}>Changes requested</option>
-            <option value="pending" {% if f.review == 'pending' %}selected{% endif %}>Pending review</option>
+            <option value="changes_requested" {% if f.review == 'changes_requested' %}selected{% endif %}>Changes req.</option>
+            <option value="pending" {% if f.review == 'pending' %}selected{% endif %}>Pending</option>
         </select>
-        <select id="filter-draft" onchange="applyFilters()"
-            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
-            <option value="">All PRs</option>
+        <select id="filter-draft" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
+            <option value="">Drafts: All</option>
             <option value="hide" {% if f.draft == 'hide' %}selected{% endif %}>Hide drafts</option>
             <option value="only" {% if f.draft == 'only' %}selected{% endif %}>Drafts only</option>
         </select>
-        <span class="text-gray-600 mx-1">|</span>
-        <select id="filter-sort" onchange="applyFilters()"
-            class="bg-surface-lighter border border-gray-600 rounded-md px-3 py-1.5 text-gray-200 text-sm focus:outline-none focus:border-blue-500">
-            <option value="updated" {% if f.sort == 'updated' or not f.sort %}selected{% endif %}>Sort: Last updated</option>
-            <option value="created" {% if f.sort == 'created' %}selected{% endif %}>Sort: Created</option>
-            <option value="confidence" {% if f.sort == 'confidence' %}selected{% endif %}>Sort: Merge confidence</option>
+        <span class="w-px h-4 bg-white/10"></span>
+        <select id="filter-sort" onchange="applyFilters()" class="filter-pill bg-transparent border border-white/10 rounded-full px-3 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent/50 hover:border-white/20 transition">
+            <option value="updated" {% if f.sort == 'updated' or not f.sort %}selected{% endif %}>Updated</option>
+            <option value="created" {% if f.sort == 'created' %}selected{% endif %}>Created</option>
+            <option value="confidence" {% if f.sort == 'confidence' %}selected{% endif %}>Confidence</option>
         </select>
         {% if f.org or f.ci or f.review or f.draft or f.search %}
-        <button onclick="clearFilters()" class="text-xs text-gray-500 hover:text-gray-300 transition">Clear</button>
+        <button onclick="clearFilters()" class="text-xs text-gray-600 hover:text-gray-400 transition ml-1">&times; Clear</button>
         {% endif %}
     </div>
 
-    <main class="max-w-7xl mx-auto px-6 py-8">
+    <main class="max-w-[1400px] mx-auto px-6 py-5">
         {% block content %}{% endblock %}
     </main>
 </body>

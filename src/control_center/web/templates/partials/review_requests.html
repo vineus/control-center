@@ -1,36 +1,42 @@
 {% set reviews = reviews if reviews is defined else state.review_requests %}
 {% if not reviews %}
-<div class="text-gray-500 text-sm py-8 text-center">No pending review requests</div>
+<div class="text-gray-600 text-xs py-12 text-center">
+    <svg class="w-8 h-8 mx-auto mb-2 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+    No pending reviews
+</div>
 {% endif %}
 {% for rr in reviews %}
-<div class="bg-surface-light rounded-lg p-4 mb-3 border border-gray-700/50 hover:border-gray-600 transition">
-    <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-            <a href="{{ rr.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 font-medium text-sm truncate block">
-                {{ rr.title }}
-            </a>
-            <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-500">
-                <span class="bg-surface-lighter px-2 py-0.5 rounded">{{ rr.repo.split('/')[-1] }}</span>
-                <span>#{{ rr.number }}</span>
-                <span>by {{ rr.author }}</span>
-                <span class="ml-auto" title="Created {{ rr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">opened {{ rr.created_at | timeago }}</span>
-                <span title="Updated {{ rr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">updated {{ rr.updated_at | timeago }}</span>
-            </div>
-        </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
-            {# Priority badge #}
-            {% if rr.priority == "high" %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-400 border border-red-700/50">Stale</span>
-            {% elif rr.priority == "medium" %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-700/50">Aging</span>
-            {% else %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-surface-lighter text-gray-400">New</span>
-            {% endif %}
+<a href="{{ rr.url }}" target="_blank" class="block rounded-lg px-4 py-3 bg-surface-light transition-all duration-150 hover:translate-x-0.5
+    {% if rr.priority == 'high' %}card-glow-red{% elif rr.priority == 'medium' %}card-glow-yellow{% else %}card-glow-gray{% endif %}">
 
-            {% if rr.has_other_approvals %}
-            <span class="text-xs text-green-500" title="Others have approved">+1</span>
-            {% endif %}
-        </div>
+    {# Row 1: Title + priority #}
+    <div class="flex items-center gap-2 min-w-0">
+        <span class="font-medium text-[13px] text-gray-100 truncate flex-1">{{ rr.title }}</span>
+        {% if rr.priority == "high" %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-semibold">Stale</span>
+        {% elif rr.priority == "medium" %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">Aging</span>
+        {% else %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 text-gray-500 font-medium">New</span>
+        {% endif %}
     </div>
-</div>
+
+    {# Row 2: Metadata #}
+    <div class="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
+        <span class="px-1.5 py-px rounded bg-white/5 text-gray-400 font-medium">{{ rr.repo.split('/')[-1] }}</span>
+        <span class="text-gray-600">#{{ rr.number }}</span>
+        <span class="text-gray-700 mx-0.5">&middot;</span>
+        <span>{{ rr.author }}</span>
+        <span class="ml-auto" title="Created {{ rr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ rr.created_at | timeago }}</span>
+        <span class="text-gray-700">&rarr;</span>
+        <span title="Updated {{ rr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ rr.updated_at | timeago }}</span>
+    </div>
+
+    {% if rr.has_other_approvals %}
+    <div class="mt-1.5 flex items-center gap-1">
+        <svg class="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        <span class="text-[10px] text-green-500/80">Others have approved</span>
+    </div>
+    {% endif %}
+</a>
 {% endfor %}

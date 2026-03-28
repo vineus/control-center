@@ -1,91 +1,95 @@
 {% set prs = prs if prs is defined else state.my_prs %}
 {% if not prs %}
-<div class="text-gray-500 text-sm py-8 text-center">No open pull requests</div>
+<div class="text-gray-600 text-xs py-12 text-center">
+    <svg class="w-8 h-8 mx-auto mb-2 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+    No pull requests match your filters
+</div>
 {% endif %}
 {% for pr in prs %}
-<div class="bg-surface-light rounded-lg p-4 mb-3 border border-gray-700/50 hover:border-gray-600 transition">
-    <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-            <a href="{{ pr.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 font-medium text-sm truncate block">
-                {{ pr.title }}
-            </a>
-            <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-500">
-                <span class="bg-surface-lighter px-2 py-0.5 rounded">{{ pr.repo.split('/')[-1] }}</span>
-                <span>#{{ pr.number }}</span>
-                <span>{{ pr.head_ref }}</span>
-                {% if pr.is_draft %}
-                <span class="text-yellow-500">draft</span>
-                {% endif %}
-                <span class="ml-auto" title="Created {{ pr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">opened {{ pr.created_at | timeago }}</span>
-                <span title="Updated {{ pr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">updated {{ pr.updated_at | timeago }}</span>
-            </div>
-        </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
-            {# CI Status #}
-            {% if pr.ci_status.value == "success" %}
-            <span class="w-2.5 h-2.5 rounded-full bg-green-500" title="CI passing"></span>
-            {% elif pr.ci_status.value == "failure" %}
-            <span class="w-2.5 h-2.5 rounded-full bg-red-500" title="CI failing"></span>
-            {% elif pr.ci_status.value == "pending" %}
-            <span class="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" title="CI pending"></span>
-            {% else %}
-            <span class="w-2.5 h-2.5 rounded-full bg-gray-500" title="CI unknown"></span>
-            {% endif %}
+<a href="{{ pr.url }}" target="_blank" class="block rounded-lg px-4 py-3 transition-all duration-150 hover:translate-x-0.5
+    {% if pr.ready_to_merge %}card-merge-ready bg-surface-light{% elif pr.ci_status.value == 'failure' %}card-glow-red bg-surface-light{% elif pr.ci_status.value == 'pending' %}card-glow-yellow bg-surface-light{% elif pr.ci_status.value == 'success' %}card-glow-green bg-surface-light{% else %}card-glow-gray bg-surface-light{% endif %}">
 
-            {# Review Status #}
-            {% if pr.review_status.value == "approved" %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-400 border border-green-700/50">Approved</span>
-            {% elif pr.review_status.value == "changes_requested" %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-400 border border-red-700/50">Changes</span>
-            {% else %}
-            <span class="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">Pending</span>
-            {% endif %}
+    {# Row 1: Title + status badges #}
+    <div class="flex items-center gap-2 min-w-0">
+        <span class="font-medium text-[13px] text-gray-100 truncate flex-1">{{ pr.title }}</span>
+        {% if pr.is_draft %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-gray-700/50 text-gray-500 font-medium">DRAFT</span>
+        {% endif %}
+
+        {# CI indicator #}
+        {% if pr.ci_status.value == "success" %}
+        <svg class="w-4 h-4 shrink-0 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        {% elif pr.ci_status.value == "failure" %}
+        <svg class="w-4 h-4 shrink-0 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+        {% elif pr.ci_status.value == "pending" %}
+        <svg class="w-4 h-4 shrink-0 text-yellow-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10" stroke-width="2" opacity="0.3"/></svg>
+        {% else %}
+        <span class="w-3 h-3 shrink-0 rounded-full bg-gray-600"></span>
+        {% endif %}
+
+        {# Review badge #}
+        {% if pr.review_status.value == "approved" %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">Approved</span>
+        {% elif pr.review_status.value == "changes_requested" %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium">Changes</span>
+        {% else %}
+        <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 text-gray-500 font-medium">Review</span>
+        {% endif %}
+    </div>
+
+    {# Row 2: Metadata #}
+    <div class="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-500">
+        <span class="px-1.5 py-px rounded bg-white/5 text-gray-400 font-medium">{{ pr.repo.split('/')[-1] }}</span>
+        <span class="text-gray-600">#{{ pr.number }}</span>
+        <span class="text-gray-700 mx-0.5">&middot;</span>
+        <span title="Created {{ pr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.created_at | timeago }}</span>
+        <span class="text-gray-700">&rarr;</span>
+        <span title="Updated {{ pr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.updated_at | timeago }}</span>
+
+        {# Confidence on the right #}
+        {% set conf_pct = (pr.merge_confidence * 100) | int %}
+        <span class="ml-auto tabular-nums
+            {% if conf_pct >= 80 %}text-green-500{% elif conf_pct >= 50 %}text-yellow-500{% else %}text-gray-600{% endif %}">
+            {{ conf_pct }}%
+        </span>
+    </div>
+
+    {# Row 3: Confidence bar (thin) #}
+    <div class="mt-2 h-0.5 bg-white/5 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all duration-500
+            {% if conf_pct >= 80 %}bg-green-500{% elif conf_pct >= 50 %}bg-yellow-500{% else %}bg-red-500/60{% endif %}"
+            style="width: {{ conf_pct }}%">
         </div>
     </div>
 
-    {# Merge confidence bar #}
-    <div class="mt-3 flex items-center gap-2">
-        <div class="flex-1 h-1.5 bg-surface-lighter rounded-full overflow-hidden">
-            {% set conf_pct = (pr.merge_confidence * 100) | int %}
-            <div class="h-full rounded-full transition-all duration-500
-                {% if conf_pct >= 80 %}bg-green-500
-                {% elif conf_pct >= 50 %}bg-yellow-500
-                {% else %}bg-red-500{% endif %}"
-                style="width: {{ conf_pct }}%">
-            </div>
-        </div>
-        <span class="text-xs text-gray-500 w-8 text-right">{{ conf_pct }}%</span>
-    </div>
-
-    {# Failed checks #}
+    {# Row 4: Failed checks / review comments (conditional) #}
     {% set failed_checks = pr.checks | selectattr("conclusion", "equalto", "FAILURE") | list %}
     {% if failed_checks %}
     <div class="mt-2 flex flex-wrap gap-1">
-        {% for check in failed_checks[:5] %}
-        <span class="text-xs px-1.5 py-0.5 rounded bg-red-900/30 text-red-400">{{ check.name }}</span>
+        {% for check in failed_checks[:4] %}
+        <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400/80">{{ check.name }}</span>
         {% endfor %}
-        {% if failed_checks | length > 5 %}
-        <span class="text-xs text-red-400">+{{ failed_checks | length - 5 }} more</span>
+        {% if failed_checks | length > 4 %}
+        <span class="text-[10px] text-red-400/60">+{{ failed_checks | length - 4 }}</span>
         {% endif %}
     </div>
     {% endif %}
 
-    {# Review comments #}
     {% set review_comments = pr.reviews | selectattr("body") | list %}
     {% if review_comments %}
-    <div class="mt-2 space-y-1">
-        {% for review in review_comments[-2:] %}
-        {% if review.body %}
-        <div class="text-xs text-gray-400 truncate">
-            <span class="text-gray-500">{{ review.author }}:</span> {{ review.body[:120] }}
-        </div>
-        {% endif %}
-        {% endfor %}
+    {% set last_review = review_comments[-1] %}
+    {% if last_review.body %}
+    <div class="mt-1.5 text-[11px] text-gray-500 truncate">
+        <span class="text-gray-600">{{ last_review.author }}:</span> {{ last_review.body[:100] }}
     </div>
+    {% endif %}
     {% endif %}
 
     {% if pr.ready_to_merge %}
-    <div class="mt-2 text-xs text-green-400 font-medium">Ready to merge</div>
+    <div class="mt-2 flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-green-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        <span class="text-[11px] text-green-400 font-semibold">Ready to merge</span>
+    </div>
     {% endif %}
-</div>
+</a>
 {% endfor %}

@@ -12,6 +12,7 @@ MY_PRS_QUERY = """
         updatedAt
         repository {
           nameWithOwner
+          isArchived
         }
         author {
           login
@@ -66,6 +67,7 @@ query($searchQuery: String!) {
         updatedAt
         repository {
           nameWithOwner
+          isArchived
         }
         author {
           login

@@ -58,6 +58,8 @@ def _parse_checks(commit_node: dict) -> list[CheckRun]:
 def _parse_my_prs(data: dict) -> list[PRStatus]:
     prs = []
     for node in data.get("data", {}).get("viewer", {}).get("pullRequests", {}).get("nodes", []):
+        if node.get("repository", {}).get("isArchived", False):
+            continue
         commits = node.get("commits", {}).get("nodes", [])
         last_commit = commits[-1] if commits else {}
         rollup = last_commit.get("commit", {}).get("statusCheckRollup")
@@ -96,6 +98,8 @@ def _parse_review_requests(data: dict, username: str) -> list[ReviewRequest]:
     requests = []
     for node in data.get("data", {}).get("search", {}).get("nodes", []):
         if not node.get("number"):
+            continue
+        if node.get("repository", {}).get("isArchived", False):
             continue
 
         reviews = node.get("reviews", {}).get("nodes", [])
