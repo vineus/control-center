@@ -67,7 +67,7 @@ def _filter_prs(prs: list, filters: dict, autofix_attempts: dict | None = None) 
         result = [p for p in result if not p.is_draft]
     elif filters["draft"] == "only":
         result = [p for p in result if p.is_draft]
-    if filters["fixing"] and autofix_attempts:
+    if filters["fixing"]:
         result = [
             p
             for p in result
