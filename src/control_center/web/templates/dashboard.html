@@ -33,7 +33,17 @@
         <div class="text-xl font-bold te-purple tabular-nums">{{ fixing_count | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">agent fixing</div>
     </a>
-    <div class="stat" title="PRs from others where your review is requested">
+    <div class="stat cursor-pointer" title="Toggle review requests panel" onclick="
+        const rr = document.getElementById('reviews-section');
+        const prs = document.getElementById('prs-section');
+        const grid = document.getElementById('main-grid');
+        rr.classList.toggle('hidden');
+        if (rr.classList.contains('hidden')) {
+            prs.className = 'lg:col-span-5';
+            grid.className = grid.className;
+        } else {
+            prs.className = 'lg:col-span-3';
+        }">
         <div class="text-xl font-bold text-accent tabular-nums">{{ reviews | length }}</div>
         <div class="text-[10px] te-muted uppercase tracking-widest mt-1">review requests</div>
     </div>
@@ -45,8 +55,8 @@
 </div>
 {% endif %}
 
-<div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-    <section class="lg:col-span-3">
+<div id="main-grid" class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+    <section id="prs-section" class="lg:col-span-3">
         <div class="flex items-center gap-3 mb-4">
             <h2 class="text-xs font-bold te-text uppercase tracking-widest">pull requests</h2>
             <span class="text-xs te-faint tabular-nums">{{ prs | length }}</span>
@@ -60,7 +70,7 @@
         </div>
     </section>
 
-    <section class="lg:col-span-2">
+    <section id="reviews-section" class="lg:col-span-2">
         <div class="flex items-center gap-3 mb-4">
             <h2 class="text-xs font-bold te-text uppercase tracking-widest">review requests</h2>
             <span class="text-xs te-faint tabular-nums">{{ reviews | length }}</span>
