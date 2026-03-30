@@ -32,6 +32,10 @@ class AutofixManager:
         if not self.settings.autofix_enabled:
             return
 
+        # Only auto-fix PRs in the selected org
+        if self.settings.default_org:
+            prs = [p for p in prs if p.repo.split("/")[0] == self.settings.default_org]
+
         for pr in prs:
             fix_type = self._should_fix(pr)
             if fix_type is None:
