@@ -97,8 +97,9 @@ def cleanup_stale_worktrees(
             continue
 
         # Keep worktrees for branches that belong to open PRs
+        # Branch names have "/" replaced with "_" in worktree dir names
         wt_name = wt.name
-        if any(branch in wt_name for branch in open_pr_branches):
+        if any(branch.replace("/", "_") in wt_name for branch in open_pr_branches):
             continue
 
         # This worktree is stale — clean it up
