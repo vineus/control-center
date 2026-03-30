@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <link rel="stylesheet" href="/static/style.css?v={{ range(10000) | random }}">
+    <link rel="icon" id="favicon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23666' rx='2'/></svg>">
     <script>
         tailwind.config = {
             theme: {
@@ -62,6 +63,28 @@
             });
         }
 
+        // Dynamic favicon
+        function updateFavicon(d) {
+            const s = getComputedStyle(document.documentElement);
+            let color;
+            const attempts = Object.values(d.autofix_attempts || {});
+            const fixing = attempts.some(a => a.status === 'in_progress');
+            const needsFix = (d.my_prs || []).some(p => p.needs_fix);
+            if (fixing) {
+                color = s.getPropertyValue('--purple').trim();
+            } else if (needsFix) {
+                color = s.getPropertyValue('--error').trim();
+            } else if ((d.my_prs || []).length > 0) {
+                color = s.getPropertyValue('--success').trim();
+            } else {
+                color = s.getPropertyValue('--text-muted').trim();
+            }
+            const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='${color}' rx='2'/></svg>`;
+            document.getElementById('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+            const dot = document.getElementById('status-dot');
+            if (dot) dot.style.background = color;
+        }
+
         // Browser notifications
         if ('Notification' in window && Notification.permission === 'default') {
             Notification.requestPermission();
@@ -69,6 +92,7 @@
         let _prevAutofix = {};
         function checkNotifications() {
             fetch('/api/state').then(r => r.json()).then(d => {
+                updateFavicon(d);
                 const attempts = d.autofix_attempts || {};
                 for (const [key, af] of Object.entries(attempts)) {
                     const prev = _prevAutofix[key];
@@ -104,7 +128,7 @@
     {# Header #}
     <nav class="px-6 py-3 flex items-center justify-between sticky top-0 z-10" style="background:var(--bg);border-bottom:1px solid var(--border)">
         <div class="flex items-center gap-3">
-            <span class="w-1.5 h-1.5" style="background:var(--success)"></span>
+            <span id="status-dot" class="w-1.5 h-1.5" style="background:var(--success)"></span>
             <a href="/" class="text-sm font-bold tracking-widest uppercase hover:text-accent transition" style="color:var(--text)">CONTROL CENTER</a>
         </div>
         <div class="flex items-center gap-3 text-xs" style="color:var(--text-muted)">
