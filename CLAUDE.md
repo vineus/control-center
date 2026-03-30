@@ -25,6 +25,9 @@ GitHub PR monitor dashboard with auto-fix agent capabilities.
 - Client-side search (no page reload) — use `data-pr-*` attributes on cards, `autocomplete="off"` on search input
 - Search input: NEVER use `window.location.href` for search — causes page reloads and history spam
 - In-progress autofix can get stuck if SDK hangs — `reconcile_status()` force-stops tasks when PR no longer needs fixing
+- Agent SDK completion ≠ fix succeeded — `ResultMessage` returns when turns/budget exhausted. Check `is_error` field. Status flow: IN_PROGRESS → COMPLETED (agent finished) → SUCCEEDED (reconciliation confirms PR fixed)
+- Autofix only triggers on concrete issues (CI failure, merge conflicts) — never on draft status alone. Manual "continue work" was removed; drafts get fixed only when they have CI/conflict issues
+- Worktree cleanup: always normalize branch names with `.replace("/", "_")` before comparing against worktree dir names — they use different separators
 - Never auto-mark draft PRs as ready (`gh pr ready`) — that's the user's decision
 - FastAPI `{repo:path}` routes are greedy — `/api/autofix/stop/{repo:path}/{pr_number}` captures `stop/` as part of repo. Use JSON body endpoints for actions instead
 - Stopping the Claude Agent SDK: `task.cancel()` does NOT kill the subprocess. Must `pgrep -f claude_agent_sdk/_bundled/claude` + `SIGTERM` to actually stop it
