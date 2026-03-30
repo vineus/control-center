@@ -124,7 +124,7 @@ class AutofixManager:
         if fix_type is None:
             fix_type = detect_fix_type(pr)
         if fix_type is None:
-            fix_type = FixType.DRAFT if pr.is_draft else FixType.CI_FAILURE
+            fix_type = FixType.CI_FAILURE
 
         pr_key = pr.pr_key
         self.skipped.discard(pr_key)  # un-skip if manually triggered

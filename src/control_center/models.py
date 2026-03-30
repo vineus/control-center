@@ -21,7 +21,6 @@ class ReviewStatus(str, Enum):
 class FixType(str, Enum):
     CI_FAILURE = "ci_failure"
     MERGE_CONFLICT = "merge_conflict"
-    DRAFT = "draft"
 
 
 class AutofixStatus(str, Enum):

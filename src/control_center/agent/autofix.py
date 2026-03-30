@@ -203,18 +203,4 @@ Instructions:
 
 Be careful with conflict resolution — understand the intent of both sides before resolving."""
 
-    if fix_type == FixType.DRAFT:
-        return f"""You are working on draft PR #{pr.number} in {pr.repo}: "{pr.title}".
-Branch: {pr.head_ref}, target: {pr.base_ref}
-
-Instructions:
-1. Read the existing code changes on this branch (use git diff origin/{pr.base_ref}...HEAD)
-2. Read any PR description for context (use: gh pr view {pr.number} --repo {pr.repo})
-3. Continue the implementation — fix issues, add missing pieces
-4. Run `make format` if a Makefile exists
-5. Commit and push your changes
-
-Do NOT mark the PR as ready — that is the user's decision.
-Do NOT make changes unrelated to the PR's purpose."""
-
     raise ValueError(f"Unknown fix type: {fix_type}")
