@@ -80,7 +80,7 @@ def _parse_my_prs(data: dict) -> list[PRStatus]:
                 url=node["url"],
                 repo=node["repository"]["nameWithOwner"],
                 head_ref=node["headRefName"],
-                author=node.get("author", {}).get("login", "unknown"),
+                author=(node.get("author") or {}).get("login", "unknown"),
                 ci_status=_parse_ci_status(rollup_state),
                 checks=_parse_checks(last_commit),
                 review_status=_parse_review_decision(node.get("reviewDecision")),

@@ -1,4 +1,4 @@
-.PHONY: run dev format lint
+.PHONY: run dev format lint test
 
 run:
 	uv run control-center
@@ -12,3 +12,6 @@ format:
 
 lint:
 	uv run ruff check src/
+
+test:
+	uv run pytest tests/ -v
