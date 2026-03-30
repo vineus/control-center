@@ -2,6 +2,7 @@
 name = "control-center"
 version = "0.1.0"
 description = "GitHub PR monitor and auto-fix dashboard"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
