@@ -74,7 +74,7 @@
                     const prev = _prevAutofix[key];
                     if (prev && prev !== af.status && af.status !== 'in_progress') {
                         if (Notification.permission === 'granted') {
-                            const icon = af.status === 'succeeded' ? '\u2705' : '\u274c';
+                            const icon = af.status === 'succeeded' ? '\u2705' : af.status === 'completed' ? '\u{1F536}' : '\u274c';
                             new Notification(`${icon} Auto-fix ${af.status}`, {
                                 body: `${key} (${af.fix_type.replace('_',' ')})${af.error ? ': '+af.error.slice(0,80) : ''}`,
                                 tag: key,

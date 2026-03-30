@@ -66,6 +66,8 @@
     <div class="mt-2 text-[11px] te-purple">// agent fixing ({{ af.fix_type.value | replace("_", " ") }})...</div>
     {% elif af and af.status.value == "succeeded" %}
     <div class="mt-2 text-[11px] te-success">// agent fixed{% if af.cost_usd %} (${{ "%.3f" | format(af.cost_usd) }}){% endif %} {{ af.finished_at | timeago }}</div>
+    {% elif af and af.status.value == "completed" %}
+    <div class="mt-2 text-[11px] te-warning">// agent finished{% if af.cost_usd %} (${{ "%.3f" | format(af.cost_usd) }}){% endif %} {{ af.finished_at | timeago }}</div>
     {% elif af and af.status.value == "failed" %}
     <div class="mt-2 text-[11px] te-error truncate" title="{{ af.error }}">// agent failed: {{ af.error[:60] if af.error else "unknown" }}</div>
     {% endif %}

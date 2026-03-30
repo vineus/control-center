@@ -28,6 +28,7 @@ class AutofixStatus(str, Enum):
     IDLE = "idle"
     IN_PROGRESS = "in_progress"
     SUCCEEDED = "succeeded"
+    COMPLETED = "completed"
     FAILED = "failed"
 
 

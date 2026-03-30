@@ -44,20 +44,23 @@ class AutofixManager:
             self._tasks[pr.pr_key] = task
 
     async def reconcile_status(self, prs: list[PRStatus]) -> None:
-        """Clear stale autofix attempts for PRs that no longer need fixing."""
+        """Reconcile autofix attempts with current PR state.
+
+        - IN_PROGRESS + PR no longer needs fixing → stop agent, mark SUCCEEDED
+        - COMPLETED + PR no longer needs fixing → upgrade to SUCCEEDED (confirmed fix)
+        """
         pr_map = {pr.pr_key: pr for pr in prs}
         for pr_key, attempt in list(self.state.autofix_attempts.items()):
-            if attempt.status != AutofixStatus.IN_PROGRESS:
+            if attempt.status not in (AutofixStatus.IN_PROGRESS, AutofixStatus.COMPLETED):
                 continue
             pr = pr_map.get(pr_key)
             if pr is not None and pr.needs_fix:
                 continue
 
-            # PR no longer needs fixing — stop the task if running
-            if pr_key in self._running:
+            # PR no longer needs fixing
+            if attempt.status == AutofixStatus.IN_PROGRESS and pr_key in self._running:
                 logger.info("Stopping agent for %s: PR no longer needs fixing", pr_key)
                 self.stop_fix(pr_key)
-                # Override the "Stopped by user" message
                 attempt = self.state.autofix_attempts.get(pr_key)
                 if attempt:
                     attempt.status = AutofixStatus.SUCCEEDED
@@ -65,7 +68,8 @@ class AutofixManager:
                     self.state.autofix_attempts[pr_key] = attempt
             else:
                 attempt.status = AutofixStatus.SUCCEEDED
-                attempt.finished_at = datetime.now(timezone.utc)
+                if not attempt.finished_at:
+                    attempt.finished_at = datetime.now(timezone.utc)
                 self.state.autofix_attempts[pr_key] = attempt
 
             logger.info("Reconciled %s: PR no longer needs fixing", pr_key)
@@ -246,6 +250,8 @@ class AutofixManager:
 
             # Run Claude Agent SDK with timeout
             cost = 0.0
+            agent_error = False
+            agent_result = ""
             try:
                 async with asyncio.timeout(600):  # 10 minute max
                     async for message in query(
@@ -267,14 +273,24 @@ class AutofixManager:
                                     _log(f"[{block.name}] {str(block.input)[:200]}")
                         elif isinstance(message, ResultMessage):
                             cost = getattr(message, "total_cost_usd", 0.0) or 0.0
+                            agent_error = getattr(message, "is_error", False)
+                            agent_result = getattr(message, "result", "") or ""
             except TimeoutError:
                 _log("Timed out after 10 minutes")
                 raise RuntimeError("Auto-fix timed out after 10 minutes")
 
-            attempt.status = AutofixStatus.SUCCEEDED
             attempt.cost_usd = cost
-            _log(f"Succeeded (cost: ${cost:.3f})")
-            logger.info("Auto-fix succeeded for %s (cost: $%.4f)", pr_key, cost)
+            if agent_error:
+                attempt.status = AutofixStatus.FAILED
+                attempt.error = agent_result[:500] or "Agent reported an error"
+                _log(f"Failed (cost: ${cost:.3f}): {attempt.error}")
+                logger.info("Auto-fix failed for %s (cost: $%.4f): %s", pr_key, cost, attempt.error)
+            else:
+                # Agent finished but we don't know if the fix worked yet —
+                # reconcile_status() will upgrade to SUCCEEDED if PR no longer needs fixing
+                attempt.status = AutofixStatus.COMPLETED
+                _log(f"Completed (cost: ${cost:.3f})")
+                logger.info("Auto-fix completed for %s (cost: $%.4f)", pr_key, cost)
 
         except asyncio.CancelledError:
             # stop_fix() already set status to FAILED — only update if still in progress
