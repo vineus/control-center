@@ -166,10 +166,8 @@ def get_ci_failure_logs(pr: PRStatus) -> str:
 def detect_fix_type(pr: PRStatus) -> FixType | None:
     if pr.mergeable == "CONFLICTING":
         return FixType.MERGE_CONFLICT
-    if pr.ci_status.value == "failure" and not pr.is_draft:
+    if pr.ci_status.value == "failure":
         return FixType.CI_FAILURE
-    if pr.is_draft:
-        return FixType.DRAFT
     return None
 
 

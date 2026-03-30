@@ -100,7 +100,7 @@
         {% if af and af.status.value == "in_progress" %}
         <button onclick="event.stopPropagation(); fetch('/api/autofix/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'stop',pr_key:'{{ pr.pr_key }}'})}).then(()=>location.reload()); this.textContent='stopping...'; this.disabled=true"
             class="btn btn-danger text-[10px]" title="Cancel the running auto-fix agent">stop</button>
-        {% elif pr.needs_fix and not is_skipped %}
+        {% elif (pr.needs_fix or pr.is_draft) and not is_skipped %}
         <button onclick="event.stopPropagation(); this.textContent='starting...'; this.disabled=true; fetch('/api/autofix/{{ pr.repo }}/{{ pr.number }}',{method:'POST'}).then(()=>{this.textContent='running...'; setTimeout(()=>location.reload(),2000)})"
             class="btn btn-accent text-[10px]"
             title="{% if pr.mergeable == 'CONFLICTING' %}Rebase and resolve merge conflicts{% elif pr.ci_status.value == 'failure' %}Analyze CI logs and fix failing checks{% elif pr.is_draft %}Continue implementing this draft PR{% else %}Auto-fix this PR{% endif %}">

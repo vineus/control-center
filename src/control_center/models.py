@@ -112,7 +112,7 @@ class PRStatus(BaseModel):
     @computed_field
     @property
     def needs_fix(self) -> bool:
-        return self.ci_status == CIStatus.FAILURE or self.mergeable == "CONFLICTING" or self.is_draft
+        return self.ci_status == CIStatus.FAILURE or self.mergeable == "CONFLICTING"
 
 
 class ReviewRequest(BaseModel):
