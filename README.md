@@ -36,7 +36,9 @@ Open http://localhost:8000
 ### Daemon mode
 
 ```bash
-control-center -d              # start in background
+control-center start           # start in background
+control-center -d              # same as start
+control-center restart         # stop + start
 control-center status          # check if running
 control-center logs            # tail the log file
 control-center stop            # stop the daemon
@@ -47,7 +49,7 @@ control-center stop            # stop the daemon
 ```
 control-center --help
 control-center --port 9000
-control-center -d --port 9000  # daemon on custom port
+control-center start --port 9000  # daemon on custom port
 ```
 
 | Flag | Description | Default |

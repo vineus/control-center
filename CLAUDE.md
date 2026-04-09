@@ -39,7 +39,8 @@ GitHub PR monitor dashboard with auto-fix agent capabilities.
 - CSS: inner `<span>` elements need `display: block` to respect `width`/`height` — common issue with progress bars and fills
 - Templates use `{% block filter_bar %}` and `{% block body_class %}` in base.html for per-page customization (e.g., settings hides filter bar)
 - Keyboard shortcuts defined in base.html: `/` search, `r` refresh, `t` cycle theme, `g+h` dashboard, `g+s` settings, `?` help overlay
-- Daemon mode: `control-center -d` (start), `stop`, `status`, `logs` — PID file at `~/.control-center/daemon.pid`, logs at `daemon.log`
+- Daemon mode: `start` (or `-d`), `stop`, `restart`, `status`, `logs` — PID file at `~/.control-center/daemon.pid`, logs at `daemon.log`
+- Daemon double-fork: flush stdout/stderr before `os.fork()` — unflushed buffers get duplicated to both parent and child processes
 
 ## Structure
 - `src/control_center/github/` — GraphQL client, queries, polling loop
