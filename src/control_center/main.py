@@ -98,6 +98,10 @@ def _daemon_start(host: str, port: int):
             pass
         PID_FILE.unlink(missing_ok=True)
 
+    # Flush before forking to avoid duplicated output
+    sys.stdout.flush()
+    sys.stderr.flush()
+
     # Double-fork to detach
     pid = os.fork()
     if pid > 0:
@@ -132,12 +136,14 @@ def _daemon_start(host: str, port: int):
     uvicorn.run("control_center.main:app", host=host, port=port, log_level="info")
 
 
-def _daemon_stop():
-    """Stop the daemon process."""
+def _daemon_stop(quiet: bool = False):
+    """Stop the daemon process. If quiet=True, don't exit on 'not running' (used by restart)."""
     import signal
     import sys
 
     if not PID_FILE.exists():
+        if quiet:
+            return
         print("Not running (no pid file)")
         sys.exit(1)
 
@@ -146,16 +152,30 @@ def _daemon_stop():
     except (ValueError, FileNotFoundError):
         print("Invalid pid file")
         PID_FILE.unlink(missing_ok=True)
+        if quiet:
+            return
         sys.exit(1)
 
     if not _is_running(pid):
-        print(f"Process {pid} not running, cleaning up pid file")
         PID_FILE.unlink(missing_ok=True)
+        if quiet:
+            return
+        print(f"Process {pid} not running, cleaning up pid file")
         sys.exit(0)
 
     os.kill(pid, signal.SIGTERM)
-    print(f"Stopped (pid {pid})")
     PID_FILE.unlink(missing_ok=True)
+    if quiet:
+        # Wait for process to exit before restarting
+        import time
+
+        for _ in range(20):
+            if not _is_running(pid):
+                break
+            time.sleep(0.1)
+        print(f"Stopped (pid {pid})")
+    else:
+        print(f"Stopped (pid {pid})")
 
 
 def _daemon_status():
@@ -187,7 +207,10 @@ def run():
     parser.add_argument("--host", default=None, help="Host to bind to (default: from config or 0.0.0.0)")
     parser.add_argument("-d", "--daemon", action="store_true", help="Run as background daemon")
     parser.add_argument(
-        "command", nargs="?", choices=["stop", "status", "logs"], help="Daemon control: stop, status, logs"
+        "command",
+        nargs="?",
+        choices=["start", "stop", "restart", "status", "logs"],
+        help="Daemon control: start, stop, restart, status, logs",
     )
     args = parser.parse_args()
 
@@ -209,7 +232,10 @@ def run():
     host = args.host or settings.host
     port = args.port or settings.port
 
-    if args.daemon:
+    if args.command == "restart":
+        _daemon_stop(quiet=True)
+        _daemon_start(host, port)
+    elif args.daemon or args.command == "start":
         _daemon_start(host, port)
     else:
         uvicorn.run("control_center.main:app", host=host, port=port)
