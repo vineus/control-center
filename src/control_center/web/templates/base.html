@@ -121,6 +121,80 @@
         setInterval(checkNotifications, 30000);
         setTimeout(checkNotifications, 2000);
     </script>
+    <script>
+    // Track which AI REVIEW panels are expanded (survives HTMX swaps)
+    var _expandedSuggestions = new Set();
+
+    function toggleSuggestion(headerEl) {
+        var panel = headerEl.parentElement;
+        var body = panel.querySelector('.suggestion-body');
+        var icon = headerEl.querySelector('.collapse-icon');
+        if (!body) return;
+        var key = panel.getAttribute('data-key');
+        var hidden = body.style.display === 'none';
+        body.style.display = hidden ? '' : 'none';
+        if (icon) icon.textContent = hidden ? '\u2212' : '+';
+        if (key) {
+            if (hidden) { _expandedSuggestions.add(key); }
+            else { _expandedSuggestions.delete(key); }
+        }
+    }
+
+    function openFocusMode(cardEl) {
+        var overlay = document.createElement('div');
+        overlay.className = 'focus-overlay';
+        overlay.id = 'focus-overlay';
+
+        var toolbar = document.createElement('div');
+        toolbar.className = 'focus-toolbar';
+        toolbar.innerHTML = '<button class="btn" onclick="closeFocusMode()" title="Close (Esc)">&larr; back to dashboard</button>' +
+            '<span class="text-[10px] te-faint">ESC to close</span>';
+        overlay.appendChild(toolbar);
+
+        var clone = cardEl.cloneNode(true);
+        // Expand suggestion in focus mode
+        var body = clone.querySelector('.suggestion-body');
+        if (body) body.style.display = '';
+        var icon = clone.querySelector('.collapse-icon');
+        if (icon) icon.textContent = '\u2212';
+        // Remove the focus button from the clone
+        var focusBtn = clone.querySelector('.focus-btn');
+        if (focusBtn) focusBtn.remove();
+
+        overlay.appendChild(clone);
+        document.body.appendChild(overlay);
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeFocusMode() {
+        var overlay = document.getElementById('focus-overlay');
+        if (overlay) overlay.remove();
+        document.body.style.overflow = '';
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('focus-overlay')) {
+            closeFocusMode();
+        }
+    });
+
+    // Restore expanded state after HTMX swaps
+    document.addEventListener('htmx:afterSwap', function() {
+        document.querySelectorAll('.suggestion-panel[data-key]').forEach(function(panel) {
+            var key = panel.getAttribute('data-key');
+            var body = panel.querySelector('.suggestion-body');
+            var icon = panel.querySelector('.collapse-icon');
+            if (!body) return;
+            if (_expandedSuggestions.has(key)) {
+                body.style.display = '';
+                if (icon) icon.textContent = '\u2212';
+            } else {
+                body.style.display = 'none';
+                if (icon) icon.textContent = '+';
+            }
+        });
+    });
+    </script>
 </head>
 <body class="min-h-screen font-mono {% block body_class %}{% endblock %}" style="background:var(--bg);color:var(--text)">
     {% set f = filters if filters is defined else {} %}
@@ -130,6 +204,37 @@
         <div class="flex items-center gap-3">
             <span id="status-dot" class="w-1.5 h-1.5" style="background:var(--success)"></span>
             <a href="/" class="text-sm font-bold tracking-widest uppercase hover:text-accent transition" style="color:var(--text)">CONTROL CENTER</a>
+            <span id="ascii-buddy" title="I'm watching your PRs"
+                style="cursor:none;font-size:13px;user-select:none;transition:color 0.2s,opacity 0.3s;white-space:nowrap;color:var(--text)"
+                onclick="buddyClick()"></span>
+            <script>
+            (function(){
+                var frames = [
+                    '(o_o)',  '(o_O)',  '(O_o)',  '(O_O)',
+                    '(-_-)',  '(^_^)',  '(>_<)',  '(o_~)',
+                    '(._. )', '( ._.)', '(._. )', '(^_^)',
+                    '\\(o_o)/', '(o_o)/', '\\(o_o)', '\\(o_o)/',
+                    '(o_o)b', '(o_o)d', '(o_o)b', '(^_^)b',
+                ];
+                var colors = ['var(--accent)','var(--success)','var(--warning)','var(--error)','var(--purple)','var(--info)'];
+                var el = document.getElementById('ascii-buddy');
+                var i = 0, clicks = [], hiding = false;
+                function randColor() { return colors[Math.floor(Math.random() * colors.length)]; }
+                function tick() { if (!hiding) { el.textContent = frames[i]; i = (i + 1) % frames.length; } }
+                function randRecolor() { if (!hiding) el.style.color = randColor(); setTimeout(randRecolor, 1000 + Math.random() * 4000); }
+                tick(); setInterval(tick, 800); randRecolor();
+                window.buddyClick = function() {
+                    el.style.color = randColor();
+                    var now = Date.now();
+                    clicks.push(now);
+                    clicks = clicks.filter(function(t){ return now - t < 2500; });
+                    if (clicks.length >= 7) {
+                        clicks = []; hiding = true; el.textContent = '(x_x)'; el.style.opacity = '0';
+                        setTimeout(function(){ hiding = false; el.style.opacity = '1'; el.style.color = randColor(); }, 5000);
+                    }
+                };
+            })();
+            </script>
         </div>
         <div class="flex items-center gap-3 text-xs" style="color:var(--text-muted)">
             <button id="theme-toggle" onclick="cycleTheme()" class="btn text-[10px]" title="Cycle theme (?)">{{ theme if theme is defined else 'dark' }}</button>
@@ -153,33 +258,55 @@
             {% if fixing_count is defined and fixing_count > 0 %}
             <span class="w-1.5 h-1.5 pulse-dot" style="background:var(--purple)" title="{{ fixing_count }} PR(s) being fixed"></span>
             {% endif %}
-            <span id="poll-status" class="tabular-nums">
-                {% if state and state.last_poll %}{{ state.last_poll.strftime('%H:%M') }}{% endif %}
-            </span>
-            <span id="poll-countdown" class="te-faint tabular-nums w-6 text-right inline-block"></span>
-            <button id="refresh-btn" onclick="triggerRefresh()" class="btn">
-                <span id="refresh-text">refresh</span>
-            </button>
+            <div id="poll-countdown" class="poll-ring-wrap" title="Next refresh countdown" onclick="triggerRefresh()" style="cursor:pointer">
+                <svg class="poll-ring" width="28" height="28" viewBox="0 0 28 28">
+                    <circle class="poll-ring-bg" cx="14" cy="14" r="11" fill="none" stroke="var(--border)" stroke-width="2"/>
+                    <circle id="poll-ring-fill" cx="14" cy="14" r="11" fill="none" stroke="var(--accent)" stroke-width="2"
+                        stroke-dasharray="69.115" stroke-dashoffset="0" stroke-linecap="round"
+                        transform="rotate(-90 14 14)" style="transition:stroke-dashoffset 1s linear"/>
+                </svg>
+                <span id="poll-ring-text" class="poll-ring-text tabular-nums">30</span>
+            </div>
             <script>
-                let _nextPoll = Date.now() + 30000;
+                const _POLL_INTERVAL = 30;
+                let _nextPoll = Date.now() + _POLL_INTERVAL * 1000;
                 let _refreshing = false;
+                const _circumference = 2 * Math.PI * 11; // ~69.115
+
                 function triggerRefresh() {
                     if (_refreshing) return;
                     _refreshing = true;
-                    document.getElementById('refresh-text').textContent = 'polling...';
+                    const txt = document.getElementById('poll-ring-text');
+                    const fill = document.getElementById('poll-ring-fill');
+                    txt.textContent = '...';
+                    fill.style.stroke = 'var(--warning)';
+                    fill.classList.add('poll-ring-spin');
                     fetch('/api/poll', {method: 'POST'})
                         .then(() => setTimeout(() => {
-                            document.getElementById('refresh-text').textContent = 'done';
+                            txt.textContent = '\u2713';
+                            fill.style.stroke = 'var(--success)';
+                            fill.classList.remove('poll-ring-spin');
                             setTimeout(() => location.reload(), 400);
                         }, 3000))
-                        .catch(() => { document.getElementById('refresh-text').textContent = 'error'; _refreshing = false; });
+                        .catch(() => {
+                            txt.textContent = '!';
+                            fill.style.stroke = 'var(--error)';
+                            fill.classList.remove('poll-ring-spin');
+                            _refreshing = false;
+                        });
                 }
+
                 setInterval(() => {
                     if (_refreshing) return;
-                    const cd = document.getElementById('poll-countdown');
                     const s = Math.max(0, Math.round((_nextPoll - Date.now()) / 1000));
-                    cd.textContent = s > 0 ? s + 's' : '';
-                    if (s <= 0) _nextPoll = Date.now() + 30000;
+                    const txt = document.getElementById('poll-ring-text');
+                    const fill = document.getElementById('poll-ring-fill');
+                    txt.textContent = s;
+                    // Progress: full circle when s=0, empty when s=POLL_INTERVAL
+                    const offset = _circumference * (s / _POLL_INTERVAL);
+                    fill.setAttribute('stroke-dashoffset', offset);
+                    fill.style.stroke = s <= 5 ? 'var(--warning)' : 'var(--accent)';
+                    if (s <= 0) _nextPoll = Date.now() + _POLL_INTERVAL * 1000;
                 }, 1000);
             </script>
         </div>

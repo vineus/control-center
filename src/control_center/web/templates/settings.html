@@ -40,6 +40,12 @@
                         class="w-full" placeholder="leave empty for all orgs">
                     <p class="text-[10px] te-faint mt-1">// prs filtered to this org by default</p>
                 </div>
+                <div>
+                    <label class="block text-[11px] te-muted mb-1">teams</label>
+                    <input data-field="github_teams" data-type="list" value="{{ settings.github_teams | join(', ') }}" type="text"
+                        class="w-full" placeholder="e.g. vibe-ad/integration, vibe-ad/backend">
+                    <p class="text-[10px] te-faint mt-1">// comma-separated team slugs to watch for review requests</p>
+                </div>
             </div>
         </section>
 
@@ -135,10 +141,16 @@ function saveField(field, value) {
 
 document.querySelectorAll('[data-field]').forEach(el => {
     const field = el.dataset.field;
+    const isList = el.dataset.type === 'list';
     if (el.type === 'checkbox') {
         el.addEventListener('change', () => saveField(field, el.checked));
     } else if (el.tagName === 'SELECT') {
         el.addEventListener('change', () => saveField(field, el.value));
+    } else if (isList) {
+        el.addEventListener('input', () => {
+            const items = el.value.split(',').map(s => s.trim()).filter(Boolean);
+            saveField(field, items);
+        });
     } else {
         el.addEventListener('input', () => saveField(field, el.type === 'number' ? Number(el.value) : el.value));
     }

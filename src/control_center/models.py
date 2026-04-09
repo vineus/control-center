@@ -1,4 +1,6 @@
-from datetime import datetime
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, computed_field
@@ -78,6 +80,8 @@ class PRStatus(BaseModel):
     created_at: datetime
     updated_at: datetime
     autofix_in_progress: bool = False
+    is_pinned: bool = False
+    suggestion: ReviewSuggestion | None = None
 
     @computed_field
     @property
@@ -114,6 +118,22 @@ class PRStatus(BaseModel):
         return self.ci_status == CIStatus.FAILURE or self.mergeable == "CONFLICTING"
 
 
+class ReviewComment(BaseModel):
+    file: str = ""
+    line: int | None = None
+    body: str = ""
+    snippet: str = ""  # relevant code snippet
+    suggestion: str = ""  # proposed change
+    severity: str = "info"  # "critical", "warning", "info", "nit"
+
+
+class ReviewSuggestion(BaseModel):
+    summary: str = ""
+    verdict: str = ""  # "approve", "request_changes", "comment"
+    comments: list[ReviewComment] = []
+    generated_at: datetime | None = None
+
+
 class ReviewRequest(BaseModel):
     number: int
     title: str
@@ -122,8 +142,12 @@ class ReviewRequest(BaseModel):
     author: str
     review_status: ReviewStatus
     has_other_approvals: bool = False
+    review_source: str = "personal"  # "personal" or "team:org/team-slug"
+    is_team_member: bool = False  # author is in a configured team
+    is_pinned: bool = False
     created_at: datetime
     updated_at: datetime
+    suggestion: ReviewSuggestion | None = None
 
     @computed_field
     @property
@@ -141,8 +165,21 @@ class DashboardState(BaseModel):
     review_requests: list[ReviewRequest] = []
     autofix_attempts: dict[str, AutofixAttempt] = {}
     global_log: list[AgentLogEntry] = []
+    team_members: set[str] = set()  # GitHub logins from configured teams
     last_poll: datetime | None = None
     poll_error: str | None = None
+
+    def log(self, message: str, pr_key: str = "system") -> None:
+        """Append an entry to the global log (visible in frontend)."""
+        self.global_log.append(
+            AgentLogEntry(
+                timestamp=datetime.now(timezone.utc),
+                pr_key=pr_key,
+                message=message,
+            )
+        )
+        if len(self.global_log) > 600:
+            self.global_log = self.global_log[-500:]
 
     @computed_field
     @property

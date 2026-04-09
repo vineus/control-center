@@ -18,6 +18,8 @@ DEFAULT_CONFIG = """\
 username = "{username}"
 # Default org to filter PRs (leave empty for all orgs)
 default_org = ""
+# Teams to watch for review requests (e.g. ["vibe-ad/integration"])
+teams = []
 
 [ui]
 # "dark" or "light"
@@ -68,6 +70,7 @@ def _ensure_config() -> dict:
 class Settings(BaseSettings):
     github_username: str = ""
     default_org: str = ""
+    github_teams: list[str] = []
     theme: str = "dark"  # "dark" or "light"
     poll_interval_seconds: int = 180
     host: str = "0.0.0.0"
@@ -96,6 +99,7 @@ class Settings(BaseSettings):
         file_values = {
             "github_username": gh.get("username", ""),
             "default_org": gh.get("default_org", ""),
+            "github_teams": gh.get("teams", []),
             "theme": ui.get("theme", "dark"),
             "poll_interval_seconds": srv.get("poll_interval_seconds", 180),
             "host": srv.get("host", "0.0.0.0"),
@@ -109,7 +113,7 @@ class Settings(BaseSettings):
         }
 
         # Env vars (CC_ prefix) override file values via pydantic-settings
-        return cls(**{k: v for k, v in file_values.items() if v is not None and v != ""})
+        return cls(**{k: v for k, v in file_values.items() if v is not None and v != "" and v != []})
 
     def save(self) -> None:
         """Write current settings back to config file."""
@@ -118,12 +122,15 @@ class Settings(BaseSettings):
         def _esc(s: str) -> str:
             return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
+        teams_toml = "[" + ", ".join(f'"{_esc(t)}"' for t in self.github_teams) + "]"
+
         content = f"""\
 # Control Center configuration
 
 [github]
 username = "{_esc(self.github_username)}"
 default_org = "{_esc(self.default_org)}"
+teams = {teams_toml}
 
 [ui]
 theme = "{_esc(self.theme)}"

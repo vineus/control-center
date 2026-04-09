@@ -52,13 +52,27 @@
 </div>
 {% endif %}
 
+<div class="flex items-center gap-2 mb-4" id="pin-form">
+    <span class="text-[10px] te-faint">//</span>
+    <input id="pin-url" type="text" placeholder="paste GitHub PR URL to pin..." autocomplete="off"
+        class="text-[10px] flex-1 py-1 px-2" style="background:var(--bg);border:1px solid var(--border);color:var(--text)"
+        onkeydown="if(event.key==='Enter')pinPR()">
+    <select id="pin-target" class="filter text-[10px]">
+        <option value="pr">as Pull Request</option>
+        <option value="review">as Review Request</option>
+    </select>
+    <button class="btn text-[10px]" onclick="pinPR()" title="Pin a PR by URL">pin</button>
+    <span id="pin-status" class="text-[10px]" style="display:none"></span>
+</div>
+
 <div id="main-grid" class="grid grid-cols-1 lg:grid-cols-5 gap-8">
     <section id="prs-section" class="lg:col-span-3">
         <div class="flex items-center gap-3 mb-4">
-            <h2 class="text-xs font-bold te-text uppercase tracking-widest">pull requests</h2>
+            <span class="collapse-icon te-faint text-xs w-3 cursor-pointer select-none" onclick="toggleSection('prs-section','reviews-section')">&minus;</span>
+            <h2 class="text-xs font-bold te-text uppercase tracking-widest cursor-pointer select-none" onclick="toggleSection('prs-section','reviews-section')">pull requests</h2>
             <span class="text-xs te-faint tabular-nums">{{ prs | length }}</span>
         </div>
-        <div class="section-scroll space-y-2"
+        <div id="prs-content" class="section-scroll space-y-2"
             hx-get="/partials/my-prs{{ filter_qs }}"
             hx-trigger="every 30s"
             hx-swap="innerHTML"
@@ -68,11 +82,13 @@
     </section>
 
     <section id="reviews-section" class="lg:col-span-2">
-        <div class="flex items-center gap-3 mb-4">
+        <div class="flex items-center gap-3 mb-4 cursor-pointer select-none"
+            onclick="toggleSection('reviews-section','prs-section')">
+            <span class="collapse-icon te-faint text-xs w-3">&minus;</span>
             <h2 class="text-xs font-bold te-text uppercase tracking-widest">review requests</h2>
             <span class="text-xs te-faint tabular-nums">{{ reviews | length }}</span>
         </div>
-        <div class="section-scroll space-y-2"
+        <div id="reviews-content" class="section-scroll space-y-2"
             hx-get="/partials/reviews{{ filter_qs }}"
             hx-trigger="every 30s"
             hx-swap="innerHTML"
@@ -87,7 +103,7 @@
     <div class="flex items-center gap-3 mb-3 cursor-pointer"
         onclick="document.getElementById('global-log').classList.toggle('hidden')">
         <span class="text-[10px] te-faint">&gt;</span>
-        <h2 class="text-xs font-bold te-text uppercase tracking-widest">agent log</h2>
+        <h2 class="text-xs font-bold te-text uppercase tracking-widest">system log</h2>
         <span class="text-xs tabular-nums {% if fixing_count | length > 0 %}te-purple{% else %}te-faint{% endif %}">{{ state.global_log | length }}</span>
         {% if fixing_count | length > 0 %}<span class="w-1.5 h-1.5 pulse-dot" style="background:var(--purple)"></span>{% endif %}
     </div>
@@ -99,4 +115,67 @@
         {% include "partials/global_log.html" %}
     </div>
 </section>
+
+<script>
+function toggleSection(collapseId, otherId) {
+    const section = document.getElementById(collapseId);
+    const other = document.getElementById(otherId);
+    const content = section.querySelector('.section-scroll');
+    const icon = section.querySelector('.collapse-icon');
+    const isCollapsing = !section.classList.contains('section-collapsed');
+
+    if (isCollapsing) {
+        section.classList.add('section-collapsed');
+        content.style.display = 'none';
+        icon.textContent = '+';
+        section.className = section.className.replace(/lg:col-span-\d/g, '');
+        section.classList.add('lg:col-span-1');
+        if (!other.classList.contains('section-collapsed')) {
+            other.className = other.className.replace(/lg:col-span-\d/g, '');
+            other.classList.add('lg:col-span-4');
+        }
+    } else {
+        section.classList.remove('section-collapsed');
+        content.style.display = '';
+        icon.textContent = '\u2212';
+        if (other.classList.contains('section-collapsed')) {
+            section.className = section.className.replace(/lg:col-span-\d/g, '');
+            section.classList.add('lg:col-span-4');
+        } else {
+            const prs = document.getElementById('prs-section');
+            const reviews = document.getElementById('reviews-section');
+            prs.className = prs.className.replace(/lg:col-span-\d/g, '');
+            reviews.className = reviews.className.replace(/lg:col-span-\d/g, '');
+            prs.classList.add('lg:col-span-3');
+            reviews.classList.add('lg:col-span-2');
+        }
+    }
+}
+
+function pinPR() {
+    const input = document.getElementById('pin-url');
+    const target = document.getElementById('pin-target').value;
+    const status = document.getElementById('pin-status');
+    const url = input.value.trim();
+    if (!url) return;
+    status.style.display = ''; status.textContent = 'pinning...'; status.className = 'text-[10px] te-muted';
+    input.disabled = true;
+    fetch('/api/pin', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({url, target}) })
+    .then(r => r.json().then(d => ({ok: r.ok, d})))
+    .then(({ok, d}) => {
+        if (!ok) throw new Error(d.error || 'Failed');
+        input.value = '';
+        status.textContent = '\u2713 ' + (d.title || d.pr_key || 'pinned');
+        status.className = 'text-[10px] te-success';
+        setTimeout(() => location.reload(), 1000);
+    })
+    .catch(err => { status.textContent = err.message; status.className = 'text-[10px] te-error'; })
+    .finally(() => { input.disabled = false; setTimeout(() => { status.style.display = 'none'; }, 4000); });
+}
+
+function unpinPR(repo, number) {
+    fetch('/api/unpin', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({repo, number}) })
+    .then(() => location.reload());
+}
+</script>
 {% endblock %}
