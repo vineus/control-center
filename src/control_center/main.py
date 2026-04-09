@@ -48,11 +48,12 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(settings.poll_interval_seconds)
 
     task = asyncio.create_task(poll_and_fix())
-    logger.info(
-        "Control Center started — polling every %ds, autofix=%s",
-        settings.poll_interval_seconds,
-        settings.autofix_enabled,
+    startup_msg = (
+        f"Control Center started — polling every {settings.poll_interval_seconds}s, "
+        f"autofix={'on' if settings.autofix_enabled else 'off'}"
     )
+    logger.info(startup_msg)
+    state.log(startup_msg)
     yield
     task.cancel()
     try:

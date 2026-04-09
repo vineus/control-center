@@ -3,13 +3,31 @@
 <div class="te-faint text-xs py-12 text-center">// no pending reviews</div>
 {% endif %}
 {% for rr in reviews %}
+{% set age_days = rr.created_at | days_ago %}
 <div data-pr-title="{{ rr.title | lower }}" data-pr-repo="{{ rr.repo | lower }}" data-pr-branch="{{ rr.author | lower }}"
-    class="card pl-[18px] {% if rr.priority == 'high' %}opacity-60{% endif %}
-    {% if rr.priority == 'high' %}status-red{% elif rr.priority == 'medium' %}status-yellow{% else %}status-gray{% endif %}">
+    class="card pl-[18px] {% if rr.has_other_approvals %}opacity-50{% elif age_days >= 14 %}opacity-40{% endif %} {% if rr.priority == 'high' %}status-red{% elif rr.priority == 'medium' %}status-yellow{% else %}status-gray{% endif %}">
 
+    {# Title row #}
     <div class="flex items-center gap-2 min-w-0">
-        <a href="{{ rr.url }}" target="_blank" class="text-[13px] te-text truncate flex-1 hover:text-accent transition">{{ rr.title }}</a>
-        {% if rr.priority == "high" %}
+        <button class="focus-btn te-faint hover:te-text transition text-[11px]"
+            onclick="event.stopPropagation();openFocusMode(this.closest('.card'))"
+            title="Focus mode — fullscreen review">&#8689;</button>
+        {% if rr.is_pinned %}<span class="te-accent" title="Pinned review">&#128204;</span>{% endif %}
+        <a href="{{ rr.url }}" target="_blank"
+            class="text-[13px] te-text truncate flex-1 hover:text-accent transition"
+            aria-label="Open PR #{{ rr.number }}: {{ rr.title }}">{{ rr.title }}</a>
+        {% if rr.is_pinned %}
+        <button class="btn btn-danger text-[9px]" onclick="event.stopPropagation();unpinPR('{{ rr.repo }}',{{ rr.number }})" title="Unpin this review">unpin</button>
+        {% endif %}
+        {% if rr.has_other_approvals %}
+        <span class="te-success" title="Already approved by others">&#10004;</span>
+        {% endif %}
+        {% if rr.review_source.startswith("team:") %}
+        <span class="badge badge-purple" title="Requested via {{ rr.review_source[5:] }}">{{ rr.review_source[5:].split('/')[-1] }}</span>
+        {% endif %}
+        {% if age_days >= 14 %}
+        <span title="Review requested {{ age_days }} days ago">&#128117;</span>
+        {% elif rr.priority == "high" %}
         <span class="badge badge-red" title="Review requested more than 48h ago">stale</span>
         {% elif rr.priority == "medium" %}
         <span class="badge badge-yellow" title="Review requested more than 24h ago">aging</span>
@@ -18,18 +36,108 @@
         {% endif %}
     </div>
 
+    {# Meta row #}
     <div class="flex items-center gap-2 mt-2 text-[11px] te-muted">
-        <span class="te-secondary">{{ rr.repo.split('/')[-1] }}</span>
-        <span>#{{ rr.number }}</span>
+        <a href="{{ rr.url }}" target="_blank" class="repo-tag repo-tag-{{ rr.repo.split('/')[-1] | repo_color }} hover:opacity-80 transition no-underline">{{ rr.repo.split('/')[-1] }}</a>
+        <a href="{{ rr.url }}" target="_blank" class="te-muted hover:te-text transition">#{{ rr.number }}</a>
         <span>&middot;</span>
-        <span>{{ rr.author }}</span>
+        {% if rr.is_team_member %}<span class="te-warning" title="Team member">&#9733;</span>{% endif %}
+        <a href="https://github.com/{{ rr.author }}" target="_blank" class="{% if rr.is_team_member %}te-text font-bold{% else %}te-muted{% endif %} hover:te-text transition">{{ rr.author }}</a>
         <span class="ml-auto" title="Created {{ rr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ rr.created_at | timeago }}</span>
         <span>&rarr;</span>
         <span title="Updated {{ rr.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ rr.updated_at | timeago }}</span>
     </div>
 
     {% if rr.has_other_approvals %}
-    <div class="mt-2 text-[10px] te-success">// others have approved</div>
+    <div class="mt-2 text-[10px] te-success flex items-center gap-1">
+        <span aria-hidden="true">&#10003;</span> others have approved
+    </div>
+    {% endif %}
+
+    {# Suggest review button #}
+    <div class="mt-3 flex items-center gap-2">
+        <button class="btn btn-accent text-[10px] suggest-review-btn"
+            data-repo="{{ rr.repo }}" data-number="{{ rr.number }}"
+            onclick="suggestReview(this)"
+            aria-label="Generate AI review suggestion for this PR"
+            {% if rr.suggestion %}style="display:none"{% endif %}>
+            <span aria-hidden="true">&#9672;</span> suggest review
+        </button>
+        <span class="text-[10px] te-faint suggest-status" data-key="{{ rr.repo }}#{{ rr.number }}" style="display:none"></span>
+    </div>
+
+    {# Suggestion panel #}
+    {% if rr.suggestion %}
+    <div class="suggestion-panel mt-3" data-key="{{ rr.repo }}#{{ rr.number }}">
+        {% set s = rr.suggestion %}
+        {# Header — clickable to toggle #}
+        <div class="suggestion-header" style="cursor:pointer" onclick="toggleSuggestion(this)">
+            <span class="collapse-icon te-faint text-xs w-3">+</span>
+            <span class="suggestion-label">AI REVIEW</span>
+            {% if s.verdict == "approve" %}
+            <span class="verdict verdict-approve">approve</span>
+            {% elif s.verdict == "request_changes" %}
+            <span class="verdict verdict-changes">request changes</span>
+            {% else %}
+            <span class="verdict verdict-comment">comment</span>
+            {% endif %}
+            <span class="text-[10px] te-secondary">{{ s.comments | length }} comments</span>
+            <span class="flex-1"></span>
+            {% if s.generated_at %}
+            <span class="text-[10px] te-faint">{{ s.generated_at | timeago }}</span>
+            {% endif %}
+            <button class="btn text-[10px]"
+                onclick="event.stopPropagation();showHistory('{{ rr.repo }}', {{ rr.number }})"
+                aria-label="View suggestion history">history</button>
+            <button class="btn text-[10px] suggest-review-btn"
+                data-repo="{{ rr.repo }}" data-number="{{ rr.number }}"
+                onclick="event.stopPropagation();suggestReview(this)"
+                aria-label="Regenerate review suggestion">refresh</button>
+            <button class="btn btn-danger text-[10px]"
+                onclick="event.stopPropagation();deleteSuggestion('{{ rr.repo }}', {{ rr.number }})"
+                aria-label="Delete review suggestion">delete</button>
+        </div>
+
+        <div class="suggestion-body" style="display:none">
+            {# Summary #}
+            <div class="suggestion-summary">{{ s.summary }}</div>
+
+            {# Comments #}
+            {% if s.comments %}
+            <div class="suggestion-comments">
+                {% for c in s.comments %}
+                <div class="review-comment {% if c.severity == 'critical' %}rc-critical{% elif c.severity == 'warning' %}rc-warning{% elif c.severity == 'nit' %}rc-nit{% else %}rc-info{% endif %}">
+                    {# File + severity header #}
+                    <div class="rc-header">
+                        {% if c.file %}
+                        <span class="rc-file" title="{{ c.file }}">{{ c.file }}{% if c.line %}:{{ c.line }}{% endif %}</span>
+                        {% endif %}
+                        <span class="rc-severity rc-sev-{{ c.severity }}">{{ c.severity }}</span>
+                    </div>
+
+                    {# Body #}
+                    <div class="rc-body">{{ c.body }}</div>
+
+                    {# Code snippet #}
+                    {% if c.snippet %}
+                    <pre class="rc-snippet"><code>{{ c.snippet }}</code></pre>
+                    {% endif %}
+
+                    {# Suggested fix #}
+                    {% if c.suggestion %}
+                    <div class="rc-suggestion-label">Suggested change:</div>
+                    <pre class="rc-suggestion"><code>{{ c.suggestion }}</code></pre>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        </div>{# end suggestion-body #}
+    </div>
+    {% else %}
+    <div class="suggestion-panel mt-3" data-key="{{ rr.repo }}#{{ rr.number }}" style="display:none"></div>
     {% endif %}
 </div>
 {% endfor %}
+
+{# JS functions defined in my_prs.html partial (suggestReview, deleteSuggestion, showHistory, _esc) #}

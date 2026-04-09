@@ -9,17 +9,23 @@
 
     {# Title row #}
     <div class="flex items-center gap-2 min-w-0">
+        {% if pr.is_pinned %}
+        <span class="te-accent" title="Pinned PR">&#128204;</span>
+        {% endif %}
         <a href="{{ pr.url }}" target="_blank" class="text-[13px] te-text truncate flex-1 hover:text-accent transition">{{ pr.title }}</a>
+        {% if pr.is_pinned %}
+        <button class="btn btn-danger text-[9px]" onclick="event.stopPropagation();unpinPR('{{ pr.repo }}',{{ pr.number }})" title="Unpin this PR">unpin</button>
+        {% endif %}
         {% if pr.is_draft %}
         <span class="badge" title="This PR is marked as draft">draft</span>
         {% endif %}
         {# CI status #}
         {% if pr.ci_status.value == "success" %}
-        <span class="text-[10px] te-success" title="All CI checks passing">ci:pass</span>
+        <a href="{{ pr.url }}/checks" target="_blank" class="text-[10px] te-success hover:underline" title="All CI checks passing">ci:pass</a>
         {% elif pr.ci_status.value == "failure" %}
-        <span class="text-[10px] te-error" title="One or more CI checks failing">ci:fail</span>
+        <a href="{{ pr.url }}/checks" target="_blank" class="text-[10px] te-error hover:underline" title="One or more CI checks failing">ci:fail</a>
         {% elif pr.ci_status.value == "pending" %}
-        <span class="text-[10px] te-warning" title="CI checks running">ci:...</span>
+        <a href="{{ pr.url }}/checks" target="_blank" class="text-[10px] te-warning hover:underline" title="CI checks running">ci:...</a>
         {% else %}
         <span class="text-[10px] te-faint" title="CI status unknown">ci:?</span>
         {% endif %}
@@ -33,8 +39,8 @@
 
     {# Meta row #}
     <div class="flex items-center gap-2 mt-2 text-[11px] te-muted">
-        <span class="te-secondary">{{ pr.repo.split('/')[-1] }}</span>
-        <span>#{{ pr.number }}</span>
+        <a href="{{ pr.url }}" target="_blank" class="repo-tag repo-tag-{{ pr.repo.split('/')[-1] | repo_color }} hover:opacity-80 transition no-underline">{{ pr.repo.split('/')[-1] }}</a>
+        <a href="{{ pr.url }}" target="_blank" class="te-muted hover:te-text transition">#{{ pr.number }}</a>
         <span>&middot;</span>
         <span class="te-faint" title="Created {{ pr.created_at.strftime('%Y-%m-%d %H:%M') }} UTC">{{ pr.created_at | timeago }}</span>
         <span class="te-faint">&rarr;</span>
@@ -121,9 +127,9 @@
     {% if failed_checks %}
     <div class="mt-2 flex flex-wrap gap-1">
         {% for check in failed_checks[:4] %}
-        <span class="badge badge-red">{{ check.name }}</span>
+        <a href="{{ pr.url }}/checks" target="_blank" class="badge badge-red hover:opacity-80 transition no-underline">{{ check.name }}</a>
         {% endfor %}
-        {% if failed_checks | length > 4 %}<span class="text-[10px] te-error">+{{ failed_checks | length - 4 }}</span>{% endif %}
+        {% if failed_checks | length > 4 %}<a href="{{ pr.url }}/checks" target="_blank" class="text-[10px] te-error hover:underline">+{{ failed_checks | length - 4 }}</a>{% endif %}
     </div>
     {% endif %}
 
@@ -133,9 +139,75 @@
     {% set last_review = review_comments[-1] %}
     {% if last_review.body %}
     <div class="mt-2 text-[11px] te-muted truncate">
-        <span class="te-muted">{{ last_review.author }}:</span> {{ last_review.body[:100] }}
+        <a href="https://github.com/{{ last_review.author }}" target="_blank" class="te-secondary hover:te-text transition">{{ last_review.author }}</a>: {{ last_review.body[:100] }}
     </div>
     {% endif %}
+    {% endif %}
+
+    {# Review suggestion #}
+    <div class="mt-3 flex items-center gap-2">
+        <button class="btn btn-accent text-[10px] suggest-review-btn"
+            data-repo="{{ pr.repo }}" data-number="{{ pr.number }}"
+            onclick="suggestReview(this)"
+            {% if pr.suggestion %}style="display:none"{% endif %}>
+            <span aria-hidden="true">&#9672;</span> suggest review
+        </button>
+        <span class="text-[10px] te-faint suggest-status" data-key="{{ pr.repo }}#{{ pr.number }}" style="display:none"></span>
+    </div>
+
+    {% if pr.suggestion %}
+    <div class="suggestion-panel mt-3" data-key="{{ pr.repo }}#{{ pr.number }}">
+        {% set s = pr.suggestion %}
+        <div class="suggestion-header" style="cursor:pointer" onclick="toggleSuggestion(this)">
+            <span class="collapse-icon te-faint text-xs w-3">+</span>
+            <span class="suggestion-label">AI REVIEW</span>
+            {% if s.verdict == "approve" %}
+            <span class="verdict verdict-approve">approve</span>
+            {% elif s.verdict == "request_changes" %}
+            <span class="verdict verdict-changes">request changes</span>
+            {% else %}
+            <span class="verdict verdict-comment">comment</span>
+            {% endif %}
+            <span class="text-[10px] te-secondary">{{ s.comments | length }} comments</span>
+            <span class="flex-1"></span>
+            {% if s.generated_at %}
+            <span class="text-[10px] te-faint">{{ s.generated_at | timeago }}</span>
+            {% endif %}
+            <button class="btn text-[10px]" onclick="event.stopPropagation();showHistory('{{ pr.repo }}', {{ pr.number }})">history</button>
+            <button class="btn text-[10px] suggest-review-btn"
+                data-repo="{{ pr.repo }}" data-number="{{ pr.number }}"
+                onclick="event.stopPropagation();suggestReview(this)">refresh</button>
+            <button class="btn btn-danger text-[10px]"
+                onclick="event.stopPropagation();deleteSuggestion('{{ pr.repo }}', {{ pr.number }})">delete</button>
+        </div>
+        <div class="suggestion-body" style="display:none">
+            <div class="suggestion-summary">{{ s.summary }}</div>
+            {% if s.comments %}
+            <div class="suggestion-comments">
+                {% for c in s.comments %}
+                <div class="review-comment {% if c.severity == 'critical' %}rc-critical{% elif c.severity == 'warning' %}rc-warning{% elif c.severity == 'nit' %}rc-nit{% else %}rc-info{% endif %}">
+                    <div class="rc-header">
+                        {% if c.file %}
+                        <span class="rc-file" title="{{ c.file }}">{{ c.file }}{% if c.line %}:{{ c.line }}{% endif %}</span>
+                        {% endif %}
+                        <span class="rc-severity rc-sev-{{ c.severity }}">{{ c.severity }}</span>
+                    </div>
+                    <div class="rc-body">{{ c.body }}</div>
+                    {% if c.snippet %}
+                    <pre class="rc-snippet"><code>{{ c.snippet }}</code></pre>
+                    {% endif %}
+                    {% if c.suggestion %}
+                    <div class="rc-suggestion-label">Suggested change:</div>
+                    <pre class="rc-suggestion"><code>{{ c.suggestion }}</code></pre>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="suggestion-panel mt-3" data-key="{{ pr.repo }}#{{ pr.number }}" style="display:none"></div>
     {% endif %}
 
     {% if pr.ready_to_merge %}
@@ -143,3 +215,163 @@
     {% endif %}
 </div>
 {% endfor %}
+
+<script>
+function suggestReview(btn) {
+    const repo = btn.dataset.repo;
+    const number = parseInt(btn.dataset.number);
+    const key = repo + '#' + number;
+    const card = btn.closest('.card');
+    const statusEl = card.querySelector(`.suggest-status[data-key="${CSS.escape(key)}"]`);
+    const panel = card.querySelector(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
+
+    // Show progress UI immediately
+    card.querySelectorAll(`.suggest-review-btn[data-repo="${repo}"][data-number="${number}"]`).forEach(b => {
+        b.disabled = true;
+        b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>starting\u2026';
+    });
+
+    // Show live log area in the panel
+    panel.innerHTML = `<div class="review-progress" style="padding:12px">
+        <div class="flex items-center gap-2 mb-2">
+            <span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>
+            <span class="text-[11px] te-text font-bold">Generating review\u2026</span>
+        </div>
+        <div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>
+    </div>`;
+    panel.style.display = '';
+    if (statusEl) statusEl.style.display = 'none';
+
+    // Fire the request (returns immediately now)
+    fetch('/api/review/suggest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({repo, number})
+    }).catch(() => {});
+
+    // Poll for status every 3s
+    let seenLogs = 0;
+    const pollId = setInterval(() => {
+        fetch(`/api/review/status?repo=${encodeURIComponent(repo)}&number=${number}`)
+        .then(r => r.json())
+        .then(data => {
+            // Update live log stream
+            const logEl = panel.querySelector('.review-log-stream');
+            if (logEl && data.logs && data.logs.length > seenLogs) {
+                const newLogs = data.logs.slice(seenLogs);
+                seenLogs = data.logs.length;
+                for (const msg of newLogs) {
+                    const line = document.createElement('div');
+                    line.className = 'te-secondary';
+                    line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                    line.textContent = '\u203a ' + msg;
+                    logEl.appendChild(line);
+                    logEl.scrollTop = logEl.scrollHeight;
+                }
+            }
+
+            if (data.status === 'done') {
+                clearInterval(pollId);
+                _renderSuggestion(panel, card, repo, number, data.suggestion);
+            } else if (data.status === 'error') {
+                clearInterval(pollId);
+                panel.innerHTML = `<div style="padding:12px" class="text-[11px] te-error">Review failed: ${_esc(data.error || 'unknown error')}</div>`;
+                card.querySelectorAll(`.suggest-review-btn[data-repo="${repo}"][data-number="${number}"]`).forEach(b => {
+                    b.disabled = false;
+                    b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
+                });
+            }
+        })
+        .catch(() => {});
+    }, 3000);
+}
+
+function _renderSuggestion(panel, card, repo, number, s) {
+    const verdictClass = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
+    const verdictLabel = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
+    let commentsHtml = '';
+    if (s.comments && s.comments.length) {
+        commentsHtml = '<div class="suggestion-comments">';
+        for (const c of s.comments) {
+            const sevClass = c.severity === 'critical' ? 'rc-critical' : c.severity === 'warning' ? 'rc-warning' : c.severity === 'nit' ? 'rc-nit' : 'rc-info';
+            commentsHtml += `<div class="review-comment ${sevClass}"><div class="rc-header">`;
+            if (c.file) commentsHtml += `<span class="rc-file" title="${_esc(c.file)}">${_esc(c.file)}${c.line ? ':' + c.line : ''}</span>`;
+            commentsHtml += `<span class="rc-severity rc-sev-${c.severity}">${_esc(c.severity)}</span></div>`;
+            commentsHtml += `<div class="rc-body">${_esc(c.body)}</div>`;
+            if (c.snippet) commentsHtml += `<pre class="rc-snippet"><code>${_esc(c.snippet)}</code></pre>`;
+            if (c.suggestion) commentsHtml += `<div class="rc-suggestion-label">Suggested change:</div><pre class="rc-suggestion"><code>${_esc(c.suggestion)}</code></pre>`;
+            commentsHtml += '</div>';
+        }
+        commentsHtml += '</div>';
+    }
+    const nComments = s.comments ? s.comments.length : 0;
+    panel.innerHTML = `
+        <div class="suggestion-header" style="cursor:pointer" onclick="toggleSuggestion(this)">
+            <span class="collapse-icon te-faint text-xs w-3">\u2212</span>
+            <span class="suggestion-label">AI REVIEW</span>
+            <span class="verdict ${verdictClass}">${_esc(verdictLabel)}</span>
+            <span class="text-[10px] te-secondary">${nComments} comments</span>
+            <span class="flex-1"></span>
+            <span class="text-[10px] te-faint">just now</span>
+            <button class="btn text-[10px]" onclick="event.stopPropagation();showHistory('${repo}', ${number})">history</button>
+            <button class="btn text-[10px] suggest-review-btn" data-repo="${repo}" data-number="${number}" onclick="event.stopPropagation();suggestReview(this)">refresh</button>
+            <button class="btn btn-danger text-[10px]" onclick="event.stopPropagation();deleteSuggestion('${repo}', ${number})">delete</button>
+        </div>
+        <div class="suggestion-body">
+            <div class="suggestion-summary">${_esc(s.summary)}</div>
+            ${commentsHtml}
+        </div>`;
+    card.querySelectorAll(`.suggest-review-btn[data-repo="${repo}"][data-number="${number}"]`).forEach(b => { b.disabled = false; b.textContent = 'refresh'; });
+    const initBtn = card.querySelector('.suggest-review-btn:first-of-type');
+    if (initBtn && !panel.contains(initBtn)) initBtn.style.display = 'none';
+}
+
+function deleteSuggestion(repo, number) {
+    const key = repo + '#' + number;
+    document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`).forEach(panel => {
+        panel.style.display = 'none';
+        const card = panel.closest('.card');
+        if (card) {
+            const btn = card.querySelector('.suggest-review-btn');
+            if (btn) { btn.style.display = ''; btn.disabled = false; btn.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review'; }
+        }
+    });
+    fetch('/api/review/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({repo, number}) });
+}
+
+function showHistory(repo, number) {
+    const key = repo + '#' + number;
+    // Find the panel in the closest context
+    const panels = document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
+    panels.forEach(panel => {
+        const existing = panel.querySelector('.history-list');
+        if (existing) { existing.remove(); return; }
+        fetch(`/api/review/history?repo=${encodeURIComponent(repo)}&number=${number}`)
+        .then(r => r.json())
+        .then(data => {
+            const items = data.history || [];
+            if (items.length <= 1) return;
+            let html = '<div class="history-list" style="border-top:1px solid var(--border);padding:8px 12px">';
+            html += `<div class="text-[10px] te-muted font-bold uppercase tracking-widest mb-2">${items.length} previous suggestions</div>`;
+            const past = items.slice(0, -1).reverse();
+            for (const s of past) {
+                const vc = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
+                const vl = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
+                const ts = s.generated_at ? new Date(s.generated_at).toLocaleString() : '?';
+                html += `<div class="mb-3 pb-3" style="border-bottom:1px solid var(--border)"><div class="flex items-center gap-2 mb-1"><span class="verdict ${vc}" style="font-size:9px">${_esc(vl)}</span><span class="text-[10px] te-faint">${_esc(ts)}</span></div><div class="text-[11px] te-secondary">${_esc(s.summary)}</div>`;
+                if (s.comments && s.comments.length) html += `<div class="text-[10px] te-muted mt-1">${s.comments.length} comment(s)</div>`;
+                html += '</div>';
+            }
+            html += '</div>';
+            panel.insertAdjacentHTML('beforeend', html);
+        });
+    });
+}
+
+function _esc(text) {
+    if (!text) return '';
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+</script>
