@@ -222,8 +222,11 @@ function suggestReview(btn) {
     const number = parseInt(btn.dataset.number);
     const key = repo + '#' + number;
 
+    // Cleanup any existing job for this key (handles "refresh" click mid-generation)
+    _cleanupReviewJob(key);
+
     // Register active job globally (defined in base.html)
-    _activeReviews.set(key, {repo, number, seenLogs: 0, pollId: null, cachedLogs: [], failures: 0});
+    _activeReviews.set(key, {repo, number, pollId: null, cachedLogs: [], failures: 0});
 
     // Show progress UI
     _showReviewProgress(key, repo, number);
@@ -233,10 +236,14 @@ function suggestReview(btn) {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({repo, number})
-    }).catch(() => {});
-
-    // Start polling
-    _startReviewPoll(key, repo, number);
+    }).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        // Start polling only after successful enqueue
+        _startReviewPoll(key, repo, number);
+    }).catch(err => {
+        _cleanupReviewJob(key);
+        _renderPollError(key, repo, number, 'Failed to start review \u2014 ' + err.message);
+    });
 }
 
 function _renderSuggestion(panel, card, repo, number, s) {
@@ -274,7 +281,9 @@ function _renderSuggestion(panel, card, repo, number, s) {
             <div class="suggestion-summary">${_esc(s.summary)}</div>
             ${commentsHtml}
         </div>`;
-    _findBtnsByPr(repo, number).forEach(b => { b.disabled = false; b.textContent = 'refresh'; });
+    Array.from(card.querySelectorAll('.suggest-review-btn')).filter(
+        b => b.dataset.repo === repo && b.dataset.number === String(number)
+    ).forEach(b => { b.disabled = false; b.textContent = 'refresh'; });
     const initBtn = card.querySelector('.suggest-review-btn:first-of-type');
     if (initBtn && !panel.contains(initBtn)) initBtn.style.display = 'none';
 }

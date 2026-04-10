@@ -126,7 +126,7 @@
     const _expandedSuggestions = new Set();
 
     // Global registry of in-progress review jobs (survives HTMX swaps)
-    // key -> {repo, number, seenLogs, pollId, cachedLogs, failures}
+    // key -> {repo, number, pollId, cachedLogs, failures}
     const _activeReviews = new Map();
     const _MAX_POLL_FAILURES = 5;
 
@@ -147,7 +147,7 @@
 
     function _findBtnsByPr(repo, number) {
         return Array.from(document.querySelectorAll('.suggest-review-btn')).filter(
-            b => b.dataset.repo === repo && b.dataset.number == number
+            b => b.dataset.repo === repo && b.dataset.number === String(number)
         );
     }
 
@@ -193,7 +193,20 @@
         const escaped = CSS.escape(key);
         const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
         if (panel) {
-            panel.innerHTML = `<div style="padding:12px" class="text-[11px] te-error">Review failed: ${_esc(message)}<br><button class="btn btn-accent text-[10px] suggest-review-btn" data-repo="${_esc(repo)}" data-number="${number}" onclick="suggestReview(this)" style="margin-top:6px">retry</button></div>`;
+            const wrap = document.createElement('div');
+            wrap.style.padding = '12px';
+            wrap.className = 'text-[11px] te-error';
+            wrap.textContent = 'Review failed: ' + message;
+            const retryBtn = document.createElement('button');
+            retryBtn.className = 'btn btn-accent text-[10px] suggest-review-btn';
+            retryBtn.dataset.repo = repo;
+            retryBtn.dataset.number = number;
+            retryBtn.style.marginTop = '6px';
+            retryBtn.textContent = 'retry';
+            retryBtn.onclick = () => suggestReview(retryBtn);
+            wrap.appendChild(document.createElement('br'));
+            wrap.appendChild(retryBtn);
+            panel.replaceChildren(wrap);
         }
         _findBtnsByPr(repo, number).forEach(b => {
             b.disabled = false;
@@ -227,23 +240,20 @@
                 // Update live log stream
                 if (data.logs && data.logs.length > currentJob.cachedLogs.length) {
                     const newLogs = data.logs.slice(currentJob.cachedLogs.length);
+                    // Always update cachedLogs (authoritative source of truth for replays)
                     Array.prototype.push.apply(currentJob.cachedLogs, newLogs);
 
-                    // Only advance seenLogs if DOM append succeeds
                     const logEls = document.querySelectorAll(`.suggestion-panel[data-key="${escaped}"] .review-log-stream`);
-                    if (logEls.length) {
-                        currentJob.seenLogs = data.logs.length;
-                        logEls.forEach(logEl => {
-                            for (const msg of newLogs) {
-                                const line = document.createElement('div');
-                                line.className = 'te-secondary';
-                                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
-                                line.textContent = '\u203a ' + msg;
-                                logEl.appendChild(line);
-                                logEl.scrollTop = logEl.scrollHeight;
-                            }
-                        });
-                    }
+                    logEls.forEach(logEl => {
+                        for (const msg of newLogs) {
+                            const line = document.createElement('div');
+                            line.className = 'te-secondary';
+                            line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                            line.textContent = '\u203a ' + msg;
+                            logEl.appendChild(line);
+                            logEl.scrollTop = logEl.scrollHeight;
+                        }
+                    });
                 }
 
                 if (data.status === 'done') {
@@ -251,7 +261,11 @@
                     const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
                     if (panel) {
                         const card = panel.closest('.card');
-                        if (card) _renderSuggestion(panel, card, repo, number, data.suggestion);
+                        if (card && typeof _renderSuggestion === 'function') {
+                            _renderSuggestion(panel, card, repo, number, data.suggestion);
+                        } else {
+                            console.error('[review-poll] _renderSuggestion not available');
+                        }
                     }
                 } else if (data.status === 'error') {
                     _cleanupReviewJob(key);
@@ -263,7 +277,7 @@
                 console.error(`[review-poll] ${key}: ${err.message} (${currentJob.failures}/${_MAX_POLL_FAILURES})`);
                 if (currentJob.failures >= _MAX_POLL_FAILURES) {
                     _cleanupReviewJob(key);
-                    _renderPollError(key, repo, number, 'lost connection — click retry');
+                    _renderPollError(key, repo, number, 'lost connection \u2014 click retry');
                 }
             });
         }, 3000);
@@ -308,11 +322,7 @@
     });
 
     // Restore expanded state and in-progress reviews after HTMX swaps
-    document.addEventListener('htmx:afterSwap', function(event) {
-        // Only act on swaps that affect PR/review content
-        const target = event.detail.target;
-        if (!target || !target.querySelector('.suggestion-panel')) return;
-
+    document.addEventListener('htmx:afterSwap', function() {
         // Restore in-progress review generation UI
         _activeReviews.forEach((job, key) => {
             if (_showReviewProgress(key, job.repo, job.number)) {
@@ -321,7 +331,7 @@
         });
 
         // Restore expanded suggestion panels (only for non-active reviews)
-        target.querySelectorAll('.suggestion-panel[data-key]').forEach(panel => {
+        document.querySelectorAll('.suggestion-panel[data-key]').forEach(panel => {
             const key = panel.getAttribute('data-key');
             if (_activeReviews.has(key)) return;
             const body = panel.querySelector('.suggestion-body');
