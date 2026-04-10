@@ -123,15 +123,20 @@
     </script>
     <script>
     // Track which AI REVIEW panels are expanded (survives HTMX swaps)
-    var _expandedSuggestions = new Set();
+    const _expandedSuggestions = new Set();
+
+    // Global registry of in-progress review jobs (survives HTMX swaps)
+    // key -> {repo, number, seenLogs, pollId, cachedLogs, failures}
+    const _activeReviews = new Map();
+    const _MAX_POLL_FAILURES = 5;
 
     function toggleSuggestion(headerEl) {
-        var panel = headerEl.parentElement;
-        var body = panel.querySelector('.suggestion-body');
-        var icon = headerEl.querySelector('.collapse-icon');
+        const panel = headerEl.parentElement;
+        const body = panel.querySelector('.suggestion-body');
+        const icon = headerEl.querySelector('.collapse-icon');
         if (!body) return;
-        var key = panel.getAttribute('data-key');
-        var hidden = body.style.display === 'none';
+        const key = panel.getAttribute('data-key');
+        const hidden = body.style.display === 'none';
         body.style.display = hidden ? '' : 'none';
         if (icon) icon.textContent = hidden ? '\u2212' : '+';
         if (key) {
@@ -140,25 +145,149 @@
         }
     }
 
+    function _findBtnsByPr(repo, number) {
+        return Array.from(document.querySelectorAll('.suggest-review-btn')).filter(
+            b => b.dataset.repo === repo && b.dataset.number == number
+        );
+    }
+
+    function _showReviewProgress(key, repo, number) {
+        const escaped = CSS.escape(key);
+        const job = _activeReviews.get(key);
+        const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
+        if (!panel) return false;
+        panel.innerHTML = '<div class="review-progress" style="padding:12px">' +
+            '<div class="flex items-center gap-2 mb-2">' +
+            '<span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>' +
+            '<span class="text-[11px] te-text font-bold">Generating review\u2026</span>' +
+            '</div>' +
+            '<div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>' +
+            '</div>';
+        panel.style.display = '';
+        // Re-render already-seen logs
+        if (job && job.cachedLogs.length) {
+            const logEl = panel.querySelector('.review-log-stream');
+            for (const msg of job.cachedLogs) {
+                const line = document.createElement('div');
+                line.className = 'te-secondary';
+                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                line.textContent = '\u203a ' + msg;
+                logEl.appendChild(line);
+            }
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        _findBtnsByPr(repo, number).forEach(b => {
+            b.disabled = true;
+            b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>generating\u2026';
+        });
+        return true;
+    }
+
+    function _cleanupReviewJob(key) {
+        const job = _activeReviews.get(key);
+        if (job && job.pollId) clearInterval(job.pollId);
+        _activeReviews.delete(key);
+    }
+
+    function _renderPollError(key, repo, number, message) {
+        const escaped = CSS.escape(key);
+        const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
+        if (panel) {
+            panel.innerHTML = `<div style="padding:12px" class="text-[11px] te-error">Review failed: ${_esc(message)}<br><button class="btn btn-accent text-[10px] suggest-review-btn" data-repo="${_esc(repo)}" data-number="${number}" onclick="suggestReview(this)" style="margin-top:6px">retry</button></div>`;
+        }
+        _findBtnsByPr(repo, number).forEach(b => {
+            b.disabled = false;
+            b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
+        });
+    }
+
+    function _startReviewPoll(key, repo, number) {
+        const job = _activeReviews.get(key);
+        if (!job) return;
+        // Clear any existing poll for this key
+        if (job.pollId) clearInterval(job.pollId);
+
+        // Check panel exists before starting poll
+        const escaped = CSS.escape(key);
+        if (!document.querySelector(`.suggestion-panel[data-key="${escaped}"]`)) return;
+
+        job.pollId = setInterval(() => {
+            const currentJob = _activeReviews.get(key);
+            if (!currentJob) return;
+
+            fetch(`/api/review/status?repo=${encodeURIComponent(repo)}&number=${number}`)
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                // Reset failure counter on success
+                currentJob.failures = 0;
+
+                // Update live log stream
+                if (data.logs && data.logs.length > currentJob.cachedLogs.length) {
+                    const newLogs = data.logs.slice(currentJob.cachedLogs.length);
+                    Array.prototype.push.apply(currentJob.cachedLogs, newLogs);
+
+                    // Only advance seenLogs if DOM append succeeds
+                    const logEls = document.querySelectorAll(`.suggestion-panel[data-key="${escaped}"] .review-log-stream`);
+                    if (logEls.length) {
+                        currentJob.seenLogs = data.logs.length;
+                        logEls.forEach(logEl => {
+                            for (const msg of newLogs) {
+                                const line = document.createElement('div');
+                                line.className = 'te-secondary';
+                                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                                line.textContent = '\u203a ' + msg;
+                                logEl.appendChild(line);
+                                logEl.scrollTop = logEl.scrollHeight;
+                            }
+                        });
+                    }
+                }
+
+                if (data.status === 'done') {
+                    _cleanupReviewJob(key);
+                    const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
+                    if (panel) {
+                        const card = panel.closest('.card');
+                        if (card) _renderSuggestion(panel, card, repo, number, data.suggestion);
+                    }
+                } else if (data.status === 'error') {
+                    _cleanupReviewJob(key);
+                    _renderPollError(key, repo, number, data.error || 'unknown error');
+                }
+            })
+            .catch(err => {
+                currentJob.failures = (currentJob.failures || 0) + 1;
+                console.error(`[review-poll] ${key}: ${err.message} (${currentJob.failures}/${_MAX_POLL_FAILURES})`);
+                if (currentJob.failures >= _MAX_POLL_FAILURES) {
+                    _cleanupReviewJob(key);
+                    _renderPollError(key, repo, number, 'lost connection — click retry');
+                }
+            });
+        }, 3000);
+    }
+
     function openFocusMode(cardEl) {
-        var overlay = document.createElement('div');
+        const overlay = document.createElement('div');
         overlay.className = 'focus-overlay';
         overlay.id = 'focus-overlay';
 
-        var toolbar = document.createElement('div');
+        const toolbar = document.createElement('div');
         toolbar.className = 'focus-toolbar';
         toolbar.innerHTML = '<button class="btn" onclick="closeFocusMode()" title="Close (Esc)">&larr; back to dashboard</button>' +
             '<span class="text-[10px] te-faint">ESC to close</span>';
         overlay.appendChild(toolbar);
 
-        var clone = cardEl.cloneNode(true);
+        const clone = cardEl.cloneNode(true);
         // Expand suggestion in focus mode
-        var body = clone.querySelector('.suggestion-body');
+        const body = clone.querySelector('.suggestion-body');
         if (body) body.style.display = '';
-        var icon = clone.querySelector('.collapse-icon');
+        const icon = clone.querySelector('.collapse-icon');
         if (icon) icon.textContent = '\u2212';
         // Remove the focus button from the clone
-        var focusBtn = clone.querySelector('.focus-btn');
+        const focusBtn = clone.querySelector('.focus-btn');
         if (focusBtn) focusBtn.remove();
 
         overlay.appendChild(clone);
@@ -167,7 +296,7 @@
     }
 
     function closeFocusMode() {
-        var overlay = document.getElementById('focus-overlay');
+        const overlay = document.getElementById('focus-overlay');
         if (overlay) overlay.remove();
         document.body.style.overflow = '';
     }
@@ -179,22 +308,24 @@
     });
 
     // Restore expanded state and in-progress reviews after HTMX swaps
-    document.addEventListener('htmx:afterSwap', function() {
+    document.addEventListener('htmx:afterSwap', function(event) {
+        // Only act on swaps that affect PR/review content
+        const target = event.detail.target;
+        if (!target || !target.querySelector('.suggestion-panel')) return;
+
         // Restore in-progress review generation UI
-        if (typeof window._activeReviews !== 'undefined') {
-            window._activeReviews.forEach(function(job, key) {
-                _showReviewProgress(key, job.repo, job.number);
-                // Restart polling (finds new DOM elements)
+        _activeReviews.forEach((job, key) => {
+            if (_showReviewProgress(key, job.repo, job.number)) {
                 _startReviewPoll(key, job.repo, job.number);
-            });
-        }
+            }
+        });
 
         // Restore expanded suggestion panels (only for non-active reviews)
-        document.querySelectorAll('.suggestion-panel[data-key]').forEach(function(panel) {
-            var key = panel.getAttribute('data-key');
-            if (typeof window._activeReviews !== 'undefined' && window._activeReviews.has(key)) return;
-            var body = panel.querySelector('.suggestion-body');
-            var icon = panel.querySelector('.collapse-icon');
+        target.querySelectorAll('.suggestion-panel[data-key]').forEach(panel => {
+            const key = panel.getAttribute('data-key');
+            if (_activeReviews.has(key)) return;
+            const body = panel.querySelector('.suggestion-body');
+            const icon = panel.querySelector('.collapse-icon');
             if (!body) return;
             if (_expandedSuggestions.has(key)) {
                 body.style.display = '';
