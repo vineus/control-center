@@ -14,6 +14,11 @@ A dashboard that monitors your GitHub pull requests and automatically fixes CI f
 - **Browser notifications** — alerts when fixes complete or PRs become ready to merge
 - **Settings UI** — configure everything from the dashboard at `/settings`
 
+## Screenshot
+
+<img width="1434" height="1331" alt="image" src="https://github.com/user-attachments/assets/c8be35c4-cdb5-4d70-ac40-40af6f85ad40" />
+
+
 ## Quick start
 
 ### With uvx (no clone needed)
