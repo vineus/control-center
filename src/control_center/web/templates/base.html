@@ -178,10 +178,21 @@
         }
     });
 
-    // Restore expanded state after HTMX swaps
+    // Restore expanded state and in-progress reviews after HTMX swaps
     document.addEventListener('htmx:afterSwap', function() {
+        // Restore in-progress review generation UI
+        if (typeof window._activeReviews !== 'undefined') {
+            window._activeReviews.forEach(function(job, key) {
+                _showReviewProgress(key, job.repo, job.number);
+                // Restart polling (finds new DOM elements)
+                _startReviewPoll(key, job.repo, job.number);
+            });
+        }
+
+        // Restore expanded suggestion panels (only for non-active reviews)
         document.querySelectorAll('.suggestion-panel[data-key]').forEach(function(panel) {
             var key = panel.getAttribute('data-key');
+            if (typeof window._activeReviews !== 'undefined' && window._activeReviews.has(key)) return;
             var body = panel.querySelector('.suggestion-body');
             var icon = panel.querySelector('.collapse-icon');
             if (!body) return;

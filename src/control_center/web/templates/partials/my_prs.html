@@ -217,30 +217,108 @@
 {% endfor %}
 
 <script>
+// Global registry of in-progress review jobs (survives HTMX swaps)
+if (typeof window._activeReviews === 'undefined') {
+    window._activeReviews = new Map(); // key -> {repo, number, seenLogs, pollId}
+}
+
+function _showReviewProgress(key, repo, number) {
+    var escaped = CSS.escape(key);
+    document.querySelectorAll(`.suggestion-panel[data-key="${escaped}"]`).forEach(function(panel) {
+        var job = window._activeReviews.get(key);
+        panel.innerHTML = '<div class="review-progress" style="padding:12px">' +
+            '<div class="flex items-center gap-2 mb-2">' +
+            '<span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>' +
+            '<span class="text-[11px] te-text font-bold">Generating review\u2026</span>' +
+            '</div>' +
+            '<div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>' +
+            '</div>';
+        panel.style.display = '';
+        // Re-render already-seen logs
+        if (job && job.cachedLogs && job.cachedLogs.length) {
+            var logEl = panel.querySelector('.review-log-stream');
+            for (var i = 0; i < job.cachedLogs.length; i++) {
+                var line = document.createElement('div');
+                line.className = 'te-secondary';
+                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                line.textContent = '\u203a ' + job.cachedLogs[i];
+                logEl.appendChild(line);
+            }
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    });
+    document.querySelectorAll('.suggest-review-btn[data-repo="' + repo + '"][data-number="' + number + '"]').forEach(function(b) {
+        b.disabled = true;
+        b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>generating\u2026';
+    });
+}
+
+function _startReviewPoll(key, repo, number) {
+    var job = window._activeReviews.get(key);
+    if (!job) return;
+    // Clear any existing poll for this key
+    if (job.pollId) clearInterval(job.pollId);
+
+    job.pollId = setInterval(function() {
+        var currentJob = window._activeReviews.get(key);
+        if (!currentJob) return;
+        fetch('/api/review/status?repo=' + encodeURIComponent(repo) + '&number=' + number)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var escaped = CSS.escape(key);
+            // Update live log stream on all matching panels
+            if (data.logs && data.logs.length > currentJob.seenLogs) {
+                var newLogs = data.logs.slice(currentJob.seenLogs);
+                currentJob.seenLogs = data.logs.length;
+                currentJob.cachedLogs = data.logs.slice();
+                document.querySelectorAll('.suggestion-panel[data-key="' + escaped + '"] .review-log-stream').forEach(function(logEl) {
+                    for (var i = 0; i < newLogs.length; i++) {
+                        var line = document.createElement('div');
+                        line.className = 'te-secondary';
+                        line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                        line.textContent = '\u203a ' + newLogs[i];
+                        logEl.appendChild(line);
+                        logEl.scrollTop = logEl.scrollHeight;
+                    }
+                });
+            }
+
+            if (data.status === 'done') {
+                clearInterval(currentJob.pollId);
+                window._activeReviews.delete(key);
+                document.querySelectorAll('.suggestion-panel[data-key="' + escaped + '"]').forEach(function(panel) {
+                    var card = panel.closest('.card');
+                    if (card) _renderSuggestion(panel, card, repo, number, data.suggestion);
+                });
+            } else if (data.status === 'error') {
+                clearInterval(currentJob.pollId);
+                window._activeReviews.delete(key);
+                document.querySelectorAll('.suggestion-panel[data-key="' + escaped + '"]').forEach(function(panel) {
+                    panel.innerHTML = '<div style="padding:12px" class="text-[11px] te-error">Review failed: ' + _esc(data.error || 'unknown error') + '</div>';
+                    var card = panel.closest('.card');
+                    if (card) {
+                        card.querySelectorAll('.suggest-review-btn[data-repo="' + repo + '"][data-number="' + number + '"]').forEach(function(b) {
+                            b.disabled = false;
+                            b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
+                        });
+                    }
+                });
+            }
+        })
+        .catch(function() {});
+    }, 3000);
+}
+
 function suggestReview(btn) {
     const repo = btn.dataset.repo;
     const number = parseInt(btn.dataset.number);
     const key = repo + '#' + number;
-    const card = btn.closest('.card');
-    const statusEl = card.querySelector(`.suggest-status[data-key="${CSS.escape(key)}"]`);
-    const panel = card.querySelector(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
 
-    // Show progress UI immediately
-    card.querySelectorAll(`.suggest-review-btn[data-repo="${repo}"][data-number="${number}"]`).forEach(b => {
-        b.disabled = true;
-        b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>starting\u2026';
-    });
+    // Register active job globally
+    window._activeReviews.set(key, {repo: repo, number: number, seenLogs: 0, pollId: null, cachedLogs: []});
 
-    // Show live log area in the panel
-    panel.innerHTML = `<div class="review-progress" style="padding:12px">
-        <div class="flex items-center gap-2 mb-2">
-            <span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>
-            <span class="text-[11px] te-text font-bold">Generating review\u2026</span>
-        </div>
-        <div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>
-    </div>`;
-    panel.style.display = '';
-    if (statusEl) statusEl.style.display = 'none';
+    // Show progress UI
+    _showReviewProgress(key, repo, number);
 
     // Fire the request (returns immediately now)
     fetch('/api/review/suggest', {
@@ -249,41 +327,8 @@ function suggestReview(btn) {
         body: JSON.stringify({repo, number})
     }).catch(() => {});
 
-    // Poll for status every 3s
-    let seenLogs = 0;
-    const pollId = setInterval(() => {
-        fetch(`/api/review/status?repo=${encodeURIComponent(repo)}&number=${number}`)
-        .then(r => r.json())
-        .then(data => {
-            // Update live log stream
-            const logEl = panel.querySelector('.review-log-stream');
-            if (logEl && data.logs && data.logs.length > seenLogs) {
-                const newLogs = data.logs.slice(seenLogs);
-                seenLogs = data.logs.length;
-                for (const msg of newLogs) {
-                    const line = document.createElement('div');
-                    line.className = 'te-secondary';
-                    line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
-                    line.textContent = '\u203a ' + msg;
-                    logEl.appendChild(line);
-                    logEl.scrollTop = logEl.scrollHeight;
-                }
-            }
-
-            if (data.status === 'done') {
-                clearInterval(pollId);
-                _renderSuggestion(panel, card, repo, number, data.suggestion);
-            } else if (data.status === 'error') {
-                clearInterval(pollId);
-                panel.innerHTML = `<div style="padding:12px" class="text-[11px] te-error">Review failed: ${_esc(data.error || 'unknown error')}</div>`;
-                card.querySelectorAll(`.suggest-review-btn[data-repo="${repo}"][data-number="${number}"]`).forEach(b => {
-                    b.disabled = false;
-                    b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
-                });
-            }
-        })
-        .catch(() => {});
-    }, 3000);
+    // Start polling
+    _startReviewPoll(key, repo, number);
 }
 
 function _renderSuggestion(panel, card, repo, number, s) {
