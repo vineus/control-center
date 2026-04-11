@@ -7,6 +7,9 @@
 username = ""
 # Default org to filter PRs (leave empty for all orgs)
 default_org = ""
+# Teams to watch for review requests
+# teams = ["myorg/frontend", "myorg/backend", "myorg/platform"]
+teams = []
 
 [server]
 host = "0.0.0.0"
@@ -20,3 +23,9 @@ max_turns = 30
 cooldown_minutes = 60
 model = "sonnet"
 repos_base_dir = "~/.control-center/repos"
+
+[review]
+# Maximum tokens to spend per review suggestion (above this → error)
+max_tokens = 100000
+# Model for review suggestions (empty = use autofix model)
+model = ""

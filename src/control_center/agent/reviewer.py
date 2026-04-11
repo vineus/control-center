@@ -294,7 +294,21 @@ async def generate_review_suggestion(
 
     prompt = _build_review_prompt(pr_info, diff, inline_comments)
     prompt_tokens = len(prompt) // 4  # rough estimate
-    _log(f"Sending to Claude ({settings.autofix_model}) ~{prompt_tokens:,} tokens...")
+    max_tokens = settings.review_max_tokens
+    review_model = settings.review_model or settings.autofix_model
+
+    if prompt_tokens > max_tokens:
+        _log(f"ERROR: Prompt too large (~{prompt_tokens:,} tokens) — exceeds max_tokens limit ({max_tokens:,})")
+        raise RuntimeError(
+            f"Review aborted: estimated prompt size ~{prompt_tokens:,} tokens "
+            f"exceeds configured max_tokens={max_tokens:,}. "
+            f"Reduce PR size or increase [review] max_tokens in config.toml."
+        )
+
+    _log(f"Sending to Claude ({review_model}) ~{prompt_tokens:,} tokens (limit: {max_tokens:,})...")
+
+    # Budget: rough conversion — ~$3/M input tokens for Sonnet, cap at $1 safety margin
+    budget_usd = min(max_tokens / 1_000_000 * 5.0, 1.0)
 
     result_text = ""
     chunk_count = 0
@@ -306,8 +320,8 @@ async def generate_review_suggestion(
                 allowed_tools=[],
                 permission_mode="bypassPermissions",
                 max_turns=1,
-                max_budget_usd=0.5,
-                model=settings.autofix_model,
+                max_budget_usd=budget_usd,
+                model=review_model,
             ),
         ):
             if isinstance(message, AssistantMessage):

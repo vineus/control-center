@@ -122,43 +122,232 @@
         setTimeout(checkNotifications, 2000);
     </script>
     <script>
-    // Track which AI REVIEW panels are expanded (survives HTMX swaps)
-    var _expandedSuggestions = new Set();
+    // --- Review Manager: namespaced to avoid global pollution ---
+    const RM = (function() {
+        const expandedSuggestions = new Set();
+        // key -> {repo, number, state, pollId, cachedLogs, failures, startTime}
+        // state: 'starting' | 'polling' | 'done'
+        const activeReviews = new Map();
+        const MAX_POLL_FAILURES = 5;
+        const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+        function findBtnsByPr(repo, number) {
+            return Array.from(document.querySelectorAll('.suggest-review-btn')).filter(
+                b => b.dataset.repo === repo && b.dataset.number === String(number)
+            );
+        }
+
+        function findPanel(key) {
+            return document.querySelector(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
+        }
+
+        function showProgress(key, repo, number) {
+            const job = activeReviews.get(key);
+            const panel = findPanel(key);
+            if (!panel) return false;
+            panel.innerHTML = '<div class="review-progress" style="padding:12px">' +
+                '<div class="flex items-center gap-2 mb-2">' +
+                '<span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>' +
+                '<span class="text-[11px] te-text font-bold">Generating review\u2026</span>' +
+                '</div>' +
+                '<div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>' +
+                '</div>';
+            panel.style.display = '';
+            if (job && job.cachedLogs.length) {
+                const logEl = panel.querySelector('.review-log-stream');
+                for (const msg of job.cachedLogs) {
+                    const line = document.createElement('div');
+                    line.className = 'te-secondary';
+                    line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                    line.textContent = '\u203a ' + msg;
+                    logEl.appendChild(line);
+                }
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            findBtnsByPr(repo, number).forEach(b => {
+                b.disabled = true;
+                b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>generating\u2026';
+            });
+            return true;
+        }
+
+        function cleanup(key) {
+            const job = activeReviews.get(key);
+            if (job) {
+                if (job.pollId) clearInterval(job.pollId);
+                job.state = 'done';
+            }
+            activeReviews.delete(key);
+        }
+
+        function renderError(key, repo, number, message, logs) {
+            const panel = findPanel(key);
+            if (panel) {
+                const wrap = document.createElement('div');
+                wrap.style.padding = '12px';
+                wrap.className = 'text-[11px] te-error';
+                wrap.textContent = 'Review failed: ' + message;
+                // Show error logs if available
+                if (logs && logs.length) {
+                    const logBox = document.createElement('div');
+                    logBox.className = 'review-log-stream text-[10px] te-muted';
+                    logBox.style.cssText = 'max-height:100px;overflow-y:auto;margin-top:8px;padding:6px;border:1px solid var(--border)';
+                    for (const msg of logs) {
+                        const line = document.createElement('div');
+                        line.style.cssText = 'padding:1px 0';
+                        line.textContent = '\u203a ' + msg;
+                        logBox.appendChild(line);
+                    }
+                    logBox.scrollTop = logBox.scrollHeight;
+                    wrap.appendChild(logBox);
+                }
+                const retryBtn = document.createElement('button');
+                retryBtn.className = 'btn btn-accent text-[10px] suggest-review-btn';
+                retryBtn.dataset.repo = repo;
+                retryBtn.dataset.number = number;
+                retryBtn.style.marginTop = '6px';
+                retryBtn.textContent = 'retry';
+                retryBtn.onclick = () => suggestReview(retryBtn);
+                wrap.appendChild(document.createElement('br'));
+                wrap.appendChild(retryBtn);
+                panel.replaceChildren(wrap);
+            }
+            findBtnsByPr(repo, number).forEach(b => {
+                b.disabled = false;
+                b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
+            });
+        }
+
+        function startPoll(key, repo, number) {
+            const job = activeReviews.get(key);
+            if (!job || job.state !== 'polling') return;
+            if (job.pollId) clearInterval(job.pollId);
+            if (!findPanel(key)) return;
+
+            const escaped = CSS.escape(key);
+            job.pollId = setInterval(() => {
+                const cur = activeReviews.get(key);
+                if (!cur || cur.state === 'done') { cleanup(key); return; }
+
+                // Job timeout
+                if (Date.now() - cur.startTime > JOB_TIMEOUT_MS) {
+                    const logs = cur.cachedLogs.slice();
+                    cleanup(key);
+                    renderError(key, repo, number, 'timed out after 5 minutes \u2014 click retry', logs);
+                    return;
+                }
+
+                // Detached panel guard
+                if (!document.querySelector(`.suggestion-panel[data-key="${escaped}"]`)) {
+                    cleanup(key);
+                    return;
+                }
+
+                fetch(`/api/review/status?repo=${encodeURIComponent(repo)}&number=${number}`)
+                .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+                .then(data => {
+                    cur.failures = 0;
+
+                    // Append new logs
+                    if (data.logs && data.logs.length > cur.cachedLogs.length) {
+                        const newLogs = data.logs.slice(cur.cachedLogs.length);
+                        Array.prototype.push.apply(cur.cachedLogs, newLogs);
+
+                        document.querySelectorAll(`.suggestion-panel[data-key="${escaped}"] .review-log-stream`).forEach(logEl => {
+                            for (const msg of newLogs) {
+                                const line = document.createElement('div');
+                                line.className = 'te-secondary';
+                                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                                line.textContent = '\u203a ' + msg;
+                                logEl.appendChild(line);
+                            }
+                            logEl.scrollTop = logEl.scrollHeight;
+                        });
+                    }
+
+                    if (data.status === 'done') {
+                        const logs = cur.cachedLogs.slice();
+                        cleanup(key);
+                        const panel = findPanel(key);
+                        if (panel) {
+                            panel.dispatchEvent(new CustomEvent('review:done', {
+                                bubbles: true,
+                                detail: { repo, number, suggestion: data.suggestion, logs }
+                            }));
+                        }
+                    } else if (data.status === 'error') {
+                        const logs = cur.cachedLogs.slice();
+                        cleanup(key);
+                        renderError(key, repo, number, data.error || 'unknown error', logs);
+                    }
+                })
+                .catch(err => {
+                    cur.failures = (cur.failures || 0) + 1;
+                    console.error(`[review-poll] ${key}: ${err.message} (${cur.failures}/${MAX_POLL_FAILURES})`);
+                    if (cur.failures >= MAX_POLL_FAILURES) {
+                        const logs = cur.cachedLogs.slice();
+                        cleanup(key);
+                        renderError(key, repo, number, 'lost connection \u2014 click retry', logs);
+                    }
+                });
+            }, 3000);
+        }
+
+        return {
+            activeReviews,
+            expandedSuggestions,
+            findBtnsByPr,
+            showProgress,
+            cleanup,
+            renderError,
+            startPoll,
+            isActive(key) { return activeReviews.has(key) && activeReviews.get(key).state !== 'done'; },
+            register(key, repo, number) {
+                cleanup(key); // kill any previous job for this key
+                activeReviews.set(key, {
+                    repo, number, state: 'starting', pollId: null,
+                    cachedLogs: [], failures: 0, startTime: Date.now()
+                });
+            },
+            markPolling(key) {
+                const job = activeReviews.get(key);
+                if (job) job.state = 'polling';
+            }
+        };
+    })();
 
     function toggleSuggestion(headerEl) {
-        var panel = headerEl.parentElement;
-        var body = panel.querySelector('.suggestion-body');
-        var icon = headerEl.querySelector('.collapse-icon');
+        const panel = headerEl.parentElement;
+        const body = panel.querySelector('.suggestion-body');
+        const icon = headerEl.querySelector('.collapse-icon');
         if (!body) return;
-        var key = panel.getAttribute('data-key');
-        var hidden = body.style.display === 'none';
+        const key = panel.getAttribute('data-key');
+        const hidden = body.style.display === 'none';
         body.style.display = hidden ? '' : 'none';
         if (icon) icon.textContent = hidden ? '\u2212' : '+';
         if (key) {
-            if (hidden) { _expandedSuggestions.add(key); }
-            else { _expandedSuggestions.delete(key); }
+            if (hidden) { RM.expandedSuggestions.add(key); }
+            else { RM.expandedSuggestions.delete(key); }
         }
     }
 
     function openFocusMode(cardEl) {
-        var overlay = document.createElement('div');
+        const overlay = document.createElement('div');
         overlay.className = 'focus-overlay';
         overlay.id = 'focus-overlay';
 
-        var toolbar = document.createElement('div');
+        const toolbar = document.createElement('div');
         toolbar.className = 'focus-toolbar';
         toolbar.innerHTML = '<button class="btn" onclick="closeFocusMode()" title="Close (Esc)">&larr; back to dashboard</button>' +
             '<span class="text-[10px] te-faint">ESC to close</span>';
         overlay.appendChild(toolbar);
 
-        var clone = cardEl.cloneNode(true);
-        // Expand suggestion in focus mode
-        var body = clone.querySelector('.suggestion-body');
+        const clone = cardEl.cloneNode(true);
+        const body = clone.querySelector('.suggestion-body');
         if (body) body.style.display = '';
-        var icon = clone.querySelector('.collapse-icon');
+        const icon = clone.querySelector('.collapse-icon');
         if (icon) icon.textContent = '\u2212';
-        // Remove the focus button from the clone
-        var focusBtn = clone.querySelector('.focus-btn');
+        const focusBtn = clone.querySelector('.focus-btn');
         if (focusBtn) focusBtn.remove();
 
         overlay.appendChild(clone);
@@ -167,7 +356,7 @@
     }
 
     function closeFocusMode() {
-        var overlay = document.getElementById('focus-overlay');
+        const overlay = document.getElementById('focus-overlay');
         if (overlay) overlay.remove();
         document.body.style.overflow = '';
     }
@@ -178,14 +367,28 @@
         }
     });
 
-    // Restore expanded state after HTMX swaps
+    // Restore state after HTMX swaps
     document.addEventListener('htmx:afterSwap', function() {
-        document.querySelectorAll('.suggestion-panel[data-key]').forEach(function(panel) {
-            var key = panel.getAttribute('data-key');
-            var body = panel.querySelector('.suggestion-body');
-            var icon = panel.querySelector('.collapse-icon');
+        // Restore in-progress reviews (only if state is 'polling')
+        RM.activeReviews.forEach((job, key) => {
+            if (job.state !== 'polling') return;
+            if (RM.showProgress(key, job.repo, job.number)) {
+                job.missingSwaps = 0;
+                RM.startPoll(key, job.repo, job.number);
+            } else {
+                job.missingSwaps = (job.missingSwaps || 0) + 1;
+                if (job.missingSwaps >= 3) RM.cleanup(key);
+            }
+        });
+
+        // Restore expanded suggestion panels (skip active reviews)
+        document.querySelectorAll('.suggestion-panel[data-key]').forEach(panel => {
+            const key = panel.getAttribute('data-key');
+            if (RM.isActive(key)) return;
+            const body = panel.querySelector('.suggestion-body');
+            const icon = panel.querySelector('.collapse-icon');
             if (!body) return;
-            if (_expandedSuggestions.has(key)) {
+            if (RM.expandedSuggestions.has(key)) {
                 body.style.display = '';
                 if (icon) icon.textContent = '\u2212';
             } else {
@@ -194,6 +397,150 @@
             }
         });
     });
+
+    // --- Shared review functions (used by my_prs and review_requests partials) ---
+    function _esc(text) {
+        if (!text) return '';
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function suggestReview(btn) {
+        const repo = btn.dataset.repo;
+        const number = parseInt(btn.dataset.number);
+        const key = repo + '#' + number;
+
+        if (RM.isActive(key)) return;
+
+        RM.register(key, repo, number);
+        RM.showProgress(key, repo, number);
+
+        fetch('/api/review/suggest', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({repo, number})
+        }).then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const job = RM.activeReviews.get(key);
+            if (!job || job.state === 'done') return;
+            RM.markPolling(key);
+            RM.startPoll(key, repo, number);
+        }).catch(err => {
+            const job = RM.activeReviews.get(key);
+            if (!job || job.state === 'done') return;
+            const logs = job.cachedLogs.slice();
+            RM.cleanup(key);
+            RM.renderError(key, repo, number, 'Failed to start review \u2014 ' + err.message, logs);
+        });
+    }
+
+    function _renderSuggestion(panel, card, repo, number, s) {
+        const verdictClass = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
+        const verdictLabel = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
+        let commentsHtml = '';
+        if (s.comments && s.comments.length) {
+            commentsHtml = '<div class="suggestion-comments">';
+            for (const c of s.comments) {
+                const sevClass = c.severity === 'critical' ? 'rc-critical' : c.severity === 'warning' ? 'rc-warning' : c.severity === 'nit' ? 'rc-nit' : 'rc-info';
+                commentsHtml += `<div class="review-comment ${sevClass}"><div class="rc-header">`;
+                if (c.file) commentsHtml += `<span class="rc-file" title="${_esc(c.file)}">${_esc(c.file)}${c.line ? ':' + c.line : ''}</span>`;
+                commentsHtml += `<span class="rc-severity rc-sev-${c.severity}">${_esc(c.severity)}</span></div>`;
+                commentsHtml += `<div class="rc-body">${_esc(c.body)}</div>`;
+                if (c.snippet) commentsHtml += `<pre class="rc-snippet"><code>${_esc(c.snippet)}</code></pre>`;
+                if (c.suggestion) commentsHtml += `<div class="rc-suggestion-label">Suggested change:</div><pre class="rc-suggestion"><code>${_esc(c.suggestion)}</code></pre>`;
+                commentsHtml += '</div>';
+            }
+            commentsHtml += '</div>';
+        }
+        const nComments = s.comments ? s.comments.length : 0;
+        panel.innerHTML = `
+            <div class="suggestion-header" style="cursor:pointer" onclick="toggleSuggestion(this)">
+                <span class="collapse-icon te-faint text-xs w-3">\u2212</span>
+                <span class="suggestion-label">AI REVIEW</span>
+                <span class="verdict ${verdictClass}">${_esc(verdictLabel)}</span>
+                <span class="text-[10px] te-secondary">${nComments} comments</span>
+                <span class="flex-1"></span>
+                <span class="text-[10px] te-faint">just now</span>
+                <button class="btn text-[10px]" onclick="event.stopPropagation();showHistory('${repo}', ${number})">history</button>
+                <button class="btn text-[10px] suggest-review-btn" data-repo="${repo}" data-number="${number}" onclick="event.stopPropagation();suggestReview(this)">refresh</button>
+                <button class="btn btn-danger text-[10px]" onclick="event.stopPropagation();deleteSuggestion('${repo}', ${number})">delete</button>
+            </div>
+            <div class="suggestion-body">
+                <div class="suggestion-summary">${_esc(s.summary)}</div>
+                ${commentsHtml}
+            </div>`;
+        Array.from(card.querySelectorAll('.suggest-review-btn')).filter(
+            b => b.dataset.repo === repo && b.dataset.number === String(number)
+        ).forEach(b => { b.disabled = false; b.textContent = 'refresh'; });
+        const initBtn = card.querySelector('.suggest-review-btn:first-of-type');
+        if (initBtn && !panel.contains(initBtn)) initBtn.style.display = 'none';
+    }
+
+    // Listen for review:done custom event dispatched by RM.startPoll
+    document.addEventListener('review:done', function(e) {
+        const { repo, number, suggestion } = e.detail;
+        const panel = e.target;
+        const card = panel.closest('.card');
+        if (card) _renderSuggestion(panel, card, repo, number, suggestion);
+    });
+
+    function deleteSuggestion(repo, number) {
+        const key = repo + '#' + number;
+        RM.cleanup(key);
+        document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`).forEach(panel => {
+            panel.style.display = 'none';
+            const card = panel.closest('.card');
+            if (card) {
+                const btn = card.querySelector('.suggest-review-btn');
+                if (btn) { btn.style.display = ''; btn.disabled = false; btn.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review'; }
+            }
+        });
+        fetch('/api/review/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({repo, number}) });
+    }
+
+    function showHistory(repo, number) {
+        const key = repo + '#' + number;
+        const panels = document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
+        panels.forEach(panel => {
+            const existing = panel.querySelector('.history-list');
+            if (existing) { existing.remove(); return; }
+            fetch(`/api/review/history?repo=${encodeURIComponent(repo)}&number=${number}`)
+            .then(r => r.json())
+            .then(data => {
+                const items = data.history || [];
+                if (items.length <= 1) return;
+                let html = '<div class="history-list" style="border-top:1px solid var(--border);padding:8px 12px;max-height:400px;overflow-y:auto">';
+                html += `<div class="text-[10px] te-muted font-bold uppercase tracking-widest mb-2">${items.length - 1} previous suggestion(s)</div>`;
+                const past = items.slice(0, -1).reverse();
+                for (const s of past) {
+                    const vc = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
+                    const vl = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
+                    const ts = s.generated_at ? new Date(s.generated_at).toLocaleString() : '?';
+                    html += `<div class="mb-3 pb-3" style="border-bottom:1px solid var(--border)">`;
+                    html += `<div class="flex items-center gap-2 mb-2"><span class="verdict ${vc}" style="font-size:9px">${_esc(vl)}</span><span class="text-[10px] te-faint">${_esc(ts)}</span><span class="text-[10px] te-muted">${s.comments ? s.comments.length : 0} comments</span></div>`;
+                    html += `<div class="suggestion-summary text-[11px] te-secondary mb-2">${_esc(s.summary)}</div>`;
+                    if (s.comments && s.comments.length) {
+                        html += '<div class="suggestion-comments">';
+                        for (const c of s.comments) {
+                            const sevClass = c.severity === 'critical' ? 'rc-critical' : c.severity === 'warning' ? 'rc-warning' : c.severity === 'nit' ? 'rc-nit' : 'rc-info';
+                            html += `<div class="review-comment ${sevClass}"><div class="rc-header">`;
+                            if (c.file) html += `<span class="rc-file" title="${_esc(c.file)}">${_esc(c.file)}${c.line ? ':' + c.line : ''}</span>`;
+                            html += `<span class="rc-severity rc-sev-${_esc(c.severity)}">${_esc(c.severity)}</span></div>`;
+                            html += `<div class="rc-body">${_esc(c.body)}</div>`;
+                            if (c.snippet) html += `<pre class="rc-snippet"><code>${_esc(c.snippet)}</code></pre>`;
+                            if (c.suggestion) html += `<div class="rc-suggestion-label">Suggested change:</div><pre class="rc-suggestion"><code>${_esc(c.suggestion)}</code></pre>`;
+                            html += '</div>';
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+                panel.insertAdjacentHTML('beforeend', html);
+            });
+        });
+    }
     </script>
 </head>
 <body class="min-h-screen font-mono {% block body_class %}{% endblock %}" style="background:var(--bg);color:var(--text)">
