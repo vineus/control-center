@@ -37,6 +37,12 @@ max_turns = 30
 cooldown_minutes = 60
 model = "sonnet"
 repos_base_dir = "~/.control-center/repos"
+
+[review]
+# Maximum tokens to spend per review suggestion (above this → error)
+max_tokens = 100000
+# Model for review suggestions (empty = use autofix model)
+model = ""
 """
 
 
@@ -84,6 +90,10 @@ class Settings(BaseSettings):
     autofix_model: str = "sonnet"
     repos_base_dir: str = "~/.control-center/repos"
 
+    # Review suggestions
+    review_max_tokens: int = 100_000
+    review_model: str = ""  # empty = use autofix_model
+
     model_config = {"env_prefix": "CC_"}
 
     @classmethod
@@ -95,6 +105,8 @@ class Settings(BaseSettings):
         ui = toml.get("ui", {})
         srv = toml.get("server", {})
         af = toml.get("autofix", {})
+
+        rv = toml.get("review", {})
 
         file_values = {
             "github_username": gh.get("username", ""),
@@ -110,6 +122,8 @@ class Settings(BaseSettings):
             "autofix_cooldown_minutes": af.get("cooldown_minutes", 60),
             "autofix_model": af.get("model", "sonnet"),
             "repos_base_dir": af.get("repos_base_dir", "~/.control-center/repos"),
+            "review_max_tokens": rv.get("max_tokens", 100_000),
+            "review_model": rv.get("model", ""),
         }
 
         # Env vars (CC_ prefix) override file values via pydantic-settings
@@ -147,6 +161,10 @@ max_turns = {self.autofix_max_turns}
 cooldown_minutes = {self.autofix_cooldown_minutes}
 model = "{_esc(self.autofix_model)}"
 repos_base_dir = "{_esc(self.repos_base_dir)}"
+
+[review]
+max_tokens = {self.review_max_tokens}
+model = "{_esc(self.review_model)}"
 """
         CONFIG_FILE.write_text(content)
         logger.info("Config saved to %s", CONFIG_FILE)

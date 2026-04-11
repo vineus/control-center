@@ -122,13 +122,199 @@
         setTimeout(checkNotifications, 2000);
     </script>
     <script>
-    // Track which AI REVIEW panels are expanded (survives HTMX swaps)
-    const _expandedSuggestions = new Set();
+    // --- Review Manager: namespaced to avoid global pollution ---
+    const RM = (function() {
+        const expandedSuggestions = new Set();
+        // key -> {repo, number, state, pollId, cachedLogs, failures, startTime}
+        // state: 'starting' | 'polling' | 'done'
+        const activeReviews = new Map();
+        const MAX_POLL_FAILURES = 5;
+        const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
-    // Global registry of in-progress review jobs (survives HTMX swaps)
-    // key -> {repo, number, pollId, cachedLogs, failures}
-    const _activeReviews = new Map();
-    const _MAX_POLL_FAILURES = 5;
+        function findBtnsByPr(repo, number) {
+            return Array.from(document.querySelectorAll('.suggest-review-btn')).filter(
+                b => b.dataset.repo === repo && b.dataset.number === String(number)
+            );
+        }
+
+        function findPanel(key) {
+            return document.querySelector(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
+        }
+
+        function showProgress(key, repo, number) {
+            const job = activeReviews.get(key);
+            const panel = findPanel(key);
+            if (!panel) return false;
+            panel.innerHTML = '<div class="review-progress" style="padding:12px">' +
+                '<div class="flex items-center gap-2 mb-2">' +
+                '<span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>' +
+                '<span class="text-[11px] te-text font-bold">Generating review\u2026</span>' +
+                '</div>' +
+                '<div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>' +
+                '</div>';
+            panel.style.display = '';
+            if (job && job.cachedLogs.length) {
+                const logEl = panel.querySelector('.review-log-stream');
+                for (const msg of job.cachedLogs) {
+                    const line = document.createElement('div');
+                    line.className = 'te-secondary';
+                    line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                    line.textContent = '\u203a ' + msg;
+                    logEl.appendChild(line);
+                }
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            findBtnsByPr(repo, number).forEach(b => {
+                b.disabled = true;
+                b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>generating\u2026';
+            });
+            return true;
+        }
+
+        function cleanup(key) {
+            const job = activeReviews.get(key);
+            if (job) {
+                if (job.pollId) clearInterval(job.pollId);
+                job.state = 'done';
+            }
+            activeReviews.delete(key);
+        }
+
+        function renderError(key, repo, number, message, logs) {
+            const panel = findPanel(key);
+            if (panel) {
+                const wrap = document.createElement('div');
+                wrap.style.padding = '12px';
+                wrap.className = 'text-[11px] te-error';
+                wrap.textContent = 'Review failed: ' + message;
+                // Show error logs if available
+                if (logs && logs.length) {
+                    const logBox = document.createElement('div');
+                    logBox.className = 'review-log-stream text-[10px] te-muted';
+                    logBox.style.cssText = 'max-height:100px;overflow-y:auto;margin-top:8px;padding:6px;border:1px solid var(--border)';
+                    for (const msg of logs) {
+                        const line = document.createElement('div');
+                        line.style.cssText = 'padding:1px 0';
+                        line.textContent = '\u203a ' + msg;
+                        logBox.appendChild(line);
+                    }
+                    logBox.scrollTop = logBox.scrollHeight;
+                    wrap.appendChild(logBox);
+                }
+                const retryBtn = document.createElement('button');
+                retryBtn.className = 'btn btn-accent text-[10px] suggest-review-btn';
+                retryBtn.dataset.repo = repo;
+                retryBtn.dataset.number = number;
+                retryBtn.style.marginTop = '6px';
+                retryBtn.textContent = 'retry';
+                retryBtn.onclick = () => suggestReview(retryBtn);
+                wrap.appendChild(document.createElement('br'));
+                wrap.appendChild(retryBtn);
+                panel.replaceChildren(wrap);
+            }
+            findBtnsByPr(repo, number).forEach(b => {
+                b.disabled = false;
+                b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
+            });
+        }
+
+        function startPoll(key, repo, number) {
+            const job = activeReviews.get(key);
+            if (!job || job.state !== 'polling') return;
+            if (job.pollId) clearInterval(job.pollId);
+            if (!findPanel(key)) return;
+
+            const escaped = CSS.escape(key);
+            job.pollId = setInterval(() => {
+                const cur = activeReviews.get(key);
+                if (!cur || cur.state === 'done') { cleanup(key); return; }
+
+                // Job timeout
+                if (Date.now() - cur.startTime > JOB_TIMEOUT_MS) {
+                    const logs = cur.cachedLogs.slice();
+                    cleanup(key);
+                    renderError(key, repo, number, 'timed out after 5 minutes \u2014 click retry', logs);
+                    return;
+                }
+
+                // Detached panel guard
+                if (!document.querySelector(`.suggestion-panel[data-key="${escaped}"]`)) {
+                    cleanup(key);
+                    return;
+                }
+
+                fetch(`/api/review/status?repo=${encodeURIComponent(repo)}&number=${number}`)
+                .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+                .then(data => {
+                    cur.failures = 0;
+
+                    // Append new logs
+                    if (data.logs && data.logs.length > cur.cachedLogs.length) {
+                        const newLogs = data.logs.slice(cur.cachedLogs.length);
+                        Array.prototype.push.apply(cur.cachedLogs, newLogs);
+
+                        document.querySelectorAll(`.suggestion-panel[data-key="${escaped}"] .review-log-stream`).forEach(logEl => {
+                            for (const msg of newLogs) {
+                                const line = document.createElement('div');
+                                line.className = 'te-secondary';
+                                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
+                                line.textContent = '\u203a ' + msg;
+                                logEl.appendChild(line);
+                            }
+                            logEl.scrollTop = logEl.scrollHeight;
+                        });
+                    }
+
+                    if (data.status === 'done') {
+                        const logs = cur.cachedLogs.slice();
+                        cleanup(key);
+                        const panel = findPanel(key);
+                        if (panel) {
+                            panel.dispatchEvent(new CustomEvent('review:done', {
+                                bubbles: true,
+                                detail: { repo, number, suggestion: data.suggestion, logs }
+                            }));
+                        }
+                    } else if (data.status === 'error') {
+                        const logs = cur.cachedLogs.slice();
+                        cleanup(key);
+                        renderError(key, repo, number, data.error || 'unknown error', logs);
+                    }
+                })
+                .catch(err => {
+                    cur.failures = (cur.failures || 0) + 1;
+                    console.error(`[review-poll] ${key}: ${err.message} (${cur.failures}/${MAX_POLL_FAILURES})`);
+                    if (cur.failures >= MAX_POLL_FAILURES) {
+                        const logs = cur.cachedLogs.slice();
+                        cleanup(key);
+                        renderError(key, repo, number, 'lost connection \u2014 click retry', logs);
+                    }
+                });
+            }, 3000);
+        }
+
+        return {
+            activeReviews,
+            expandedSuggestions,
+            findBtnsByPr,
+            showProgress,
+            cleanup,
+            renderError,
+            startPoll,
+            isActive(key) { return activeReviews.has(key) && activeReviews.get(key).state !== 'done'; },
+            register(key, repo, number) {
+                cleanup(key); // kill any previous job for this key
+                activeReviews.set(key, {
+                    repo, number, state: 'starting', pollId: null,
+                    cachedLogs: [], failures: 0, startTime: Date.now()
+                });
+            },
+            markPolling(key) {
+                const job = activeReviews.get(key);
+                if (job) job.state = 'polling';
+            }
+        };
+    })();
 
     function toggleSuggestion(headerEl) {
         const panel = headerEl.parentElement;
@@ -140,147 +326,9 @@
         body.style.display = hidden ? '' : 'none';
         if (icon) icon.textContent = hidden ? '\u2212' : '+';
         if (key) {
-            if (hidden) { _expandedSuggestions.add(key); }
-            else { _expandedSuggestions.delete(key); }
+            if (hidden) { RM.expandedSuggestions.add(key); }
+            else { RM.expandedSuggestions.delete(key); }
         }
-    }
-
-    function _findBtnsByPr(repo, number) {
-        return Array.from(document.querySelectorAll('.suggest-review-btn')).filter(
-            b => b.dataset.repo === repo && b.dataset.number === String(number)
-        );
-    }
-
-    function _showReviewProgress(key, repo, number) {
-        const escaped = CSS.escape(key);
-        const job = _activeReviews.get(key);
-        const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
-        if (!panel) return false;
-        panel.innerHTML = '<div class="review-progress" style="padding:12px">' +
-            '<div class="flex items-center gap-2 mb-2">' +
-            '<span class="pulse-dot" style="display:inline-block;width:8px;height:8px;background:var(--accent)"></span>' +
-            '<span class="text-[11px] te-text font-bold">Generating review\u2026</span>' +
-            '</div>' +
-            '<div class="review-log-stream text-[10px] te-muted" style="max-height:120px;overflow-y:auto"></div>' +
-            '</div>';
-        panel.style.display = '';
-        // Re-render already-seen logs
-        if (job && job.cachedLogs.length) {
-            const logEl = panel.querySelector('.review-log-stream');
-            for (const msg of job.cachedLogs) {
-                const line = document.createElement('div');
-                line.className = 'te-secondary';
-                line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
-                line.textContent = '\u203a ' + msg;
-                logEl.appendChild(line);
-            }
-            logEl.scrollTop = logEl.scrollHeight;
-        }
-        _findBtnsByPr(repo, number).forEach(b => {
-            b.disabled = true;
-            b.innerHTML = '<span class="pulse-dot" style="display:inline-block;width:6px;height:6px;background:var(--accent);margin-right:4px;vertical-align:middle"></span>generating\u2026';
-        });
-        return true;
-    }
-
-    function _cleanupReviewJob(key) {
-        const job = _activeReviews.get(key);
-        if (job && job.pollId) clearInterval(job.pollId);
-        _activeReviews.delete(key);
-    }
-
-    function _renderPollError(key, repo, number, message) {
-        const escaped = CSS.escape(key);
-        const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
-        if (panel) {
-            const wrap = document.createElement('div');
-            wrap.style.padding = '12px';
-            wrap.className = 'text-[11px] te-error';
-            wrap.textContent = 'Review failed: ' + message;
-            const retryBtn = document.createElement('button');
-            retryBtn.className = 'btn btn-accent text-[10px] suggest-review-btn';
-            retryBtn.dataset.repo = repo;
-            retryBtn.dataset.number = number;
-            retryBtn.style.marginTop = '6px';
-            retryBtn.textContent = 'retry';
-            retryBtn.onclick = () => suggestReview(retryBtn);
-            wrap.appendChild(document.createElement('br'));
-            wrap.appendChild(retryBtn);
-            panel.replaceChildren(wrap);
-        }
-        _findBtnsByPr(repo, number).forEach(b => {
-            b.disabled = false;
-            b.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review';
-        });
-    }
-
-    function _startReviewPoll(key, repo, number) {
-        const job = _activeReviews.get(key);
-        if (!job) return;
-        // Clear any existing poll for this key
-        if (job.pollId) clearInterval(job.pollId);
-
-        // Check panel exists before starting poll
-        const escaped = CSS.escape(key);
-        if (!document.querySelector(`.suggestion-panel[data-key="${escaped}"]`)) return;
-
-        job.pollId = setInterval(() => {
-            const currentJob = _activeReviews.get(key);
-            if (!currentJob) return;
-
-            fetch(`/api/review/status?repo=${encodeURIComponent(repo)}&number=${number}`)
-            .then(r => {
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                return r.json();
-            })
-            .then(data => {
-                // Reset failure counter on success
-                currentJob.failures = 0;
-
-                // Update live log stream
-                if (data.logs && data.logs.length > currentJob.cachedLogs.length) {
-                    const newLogs = data.logs.slice(currentJob.cachedLogs.length);
-                    // Always update cachedLogs (authoritative source of truth for replays)
-                    Array.prototype.push.apply(currentJob.cachedLogs, newLogs);
-
-                    const logEls = document.querySelectorAll(`.suggestion-panel[data-key="${escaped}"] .review-log-stream`);
-                    logEls.forEach(logEl => {
-                        for (const msg of newLogs) {
-                            const line = document.createElement('div');
-                            line.className = 'te-secondary';
-                            line.style.cssText = 'padding:2px 0;border-bottom:1px solid var(--border)';
-                            line.textContent = '\u203a ' + msg;
-                            logEl.appendChild(line);
-                            logEl.scrollTop = logEl.scrollHeight;
-                        }
-                    });
-                }
-
-                if (data.status === 'done') {
-                    _cleanupReviewJob(key);
-                    const panel = document.querySelector(`.suggestion-panel[data-key="${escaped}"]`);
-                    if (panel) {
-                        const card = panel.closest('.card');
-                        if (card && typeof _renderSuggestion === 'function') {
-                            _renderSuggestion(panel, card, repo, number, data.suggestion);
-                        } else {
-                            console.error('[review-poll] _renderSuggestion not available');
-                        }
-                    }
-                } else if (data.status === 'error') {
-                    _cleanupReviewJob(key);
-                    _renderPollError(key, repo, number, data.error || 'unknown error');
-                }
-            })
-            .catch(err => {
-                currentJob.failures = (currentJob.failures || 0) + 1;
-                console.error(`[review-poll] ${key}: ${err.message} (${currentJob.failures}/${_MAX_POLL_FAILURES})`);
-                if (currentJob.failures >= _MAX_POLL_FAILURES) {
-                    _cleanupReviewJob(key);
-                    _renderPollError(key, repo, number, 'lost connection \u2014 click retry');
-                }
-            });
-        }, 3000);
     }
 
     function openFocusMode(cardEl) {
@@ -295,12 +343,10 @@
         overlay.appendChild(toolbar);
 
         const clone = cardEl.cloneNode(true);
-        // Expand suggestion in focus mode
         const body = clone.querySelector('.suggestion-body');
         if (body) body.style.display = '';
         const icon = clone.querySelector('.collapse-icon');
         if (icon) icon.textContent = '\u2212';
-        // Remove the focus button from the clone
         const focusBtn = clone.querySelector('.focus-btn');
         if (focusBtn) focusBtn.remove();
 
@@ -321,23 +367,24 @@
         }
     });
 
-    // Restore expanded state and in-progress reviews after HTMX swaps
+    // Restore state after HTMX swaps
     document.addEventListener('htmx:afterSwap', function() {
-        // Restore in-progress review generation UI
-        _activeReviews.forEach((job, key) => {
-            if (_showReviewProgress(key, job.repo, job.number)) {
-                _startReviewPoll(key, job.repo, job.number);
+        // Restore in-progress reviews (only if state is 'polling')
+        RM.activeReviews.forEach((job, key) => {
+            if (job.state !== 'polling') return;
+            if (RM.showProgress(key, job.repo, job.number)) {
+                RM.startPoll(key, job.repo, job.number);
             }
         });
 
-        // Restore expanded suggestion panels (only for non-active reviews)
+        // Restore expanded suggestion panels (skip active reviews)
         document.querySelectorAll('.suggestion-panel[data-key]').forEach(panel => {
             const key = panel.getAttribute('data-key');
-            if (_activeReviews.has(key)) return;
+            if (RM.isActive(key)) return;
             const body = panel.querySelector('.suggestion-body');
             const icon = panel.querySelector('.collapse-icon');
             if (!body) return;
-            if (_expandedSuggestions.has(key)) {
+            if (RM.expandedSuggestions.has(key)) {
                 body.style.display = '';
                 if (icon) icon.textContent = '\u2212';
             } else {

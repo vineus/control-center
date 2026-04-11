@@ -410,9 +410,15 @@ async def suggest_review(request: Request):
                 "generated_at": suggestion.generated_at.isoformat() if suggestion.generated_at else None,
             }
         except Exception as e:
-            _log(f"Review suggestion failed: {str(e)[:200]}")
+            err_msg = str(e).strip() or f"{type(e).__name__} (no details)"
+            import traceback
+
+            tb = traceback.format_exception(e)
+            tb_short = "".join(tb[-3:])[:500]
+            _log(f"Review suggestion failed: {err_msg[:200]}")
+            _log(f"Traceback: {tb_short}")
             jobs[pr_key]["status"] = "error"
-            jobs[pr_key]["error"] = str(e)[:500]
+            jobs[pr_key]["error"] = f"{type(e).__name__}: {err_msg[:500]}"
 
     asyncio.create_task(_run())
     return {"status": "started", "pr_key": pr_key}

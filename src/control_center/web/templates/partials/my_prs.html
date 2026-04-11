@@ -222,29 +222,39 @@ function suggestReview(btn) {
     const number = parseInt(btn.dataset.number);
     const key = repo + '#' + number;
 
-    // Cleanup any existing job for this key (handles "refresh" click mid-generation)
-    _cleanupReviewJob(key);
+    // Double-click prevention: bail if already active for this key
+    if (RM.isActive(key)) return;
 
-    // Register active job globally (defined in base.html)
-    _activeReviews.set(key, {repo, number, pollId: null, cachedLogs: [], failures: 0});
+    // Register job with state machine (cleanup any stale previous job)
+    RM.register(key, repo, number);
+    RM.showProgress(key, repo, number);
 
-    // Show progress UI
-    _showReviewProgress(key, repo, number);
-
-    // Fire the request (returns immediately now)
     fetch('/api/review/suggest', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({repo, number})
     }).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        // Start polling only after successful enqueue
-        _startReviewPoll(key, repo, number);
+        const job = RM.activeReviews.get(key);
+        if (!job || job.state === 'done') return; // already cleaned up
+        RM.markPolling(key);
+        RM.startPoll(key, repo, number);
     }).catch(err => {
-        _cleanupReviewJob(key);
-        _renderPollError(key, repo, number, 'Failed to start review \u2014 ' + err.message);
+        const job = RM.activeReviews.get(key);
+        if (!job || job.state === 'done') return;
+        const logs = job.cachedLogs.slice();
+        RM.cleanup(key);
+        RM.renderError(key, repo, number, 'Failed to start review \u2014 ' + err.message, logs);
     });
 }
+
+// Handle review:done custom event from RM.startPoll (decouples base.html from partial)
+document.addEventListener('review:done', function(e) {
+    const { repo, number, suggestion } = e.detail;
+    const panel = e.target;
+    const card = panel.closest('.card');
+    if (card) _renderSuggestion(panel, card, repo, number, suggestion);
+});
 
 function _renderSuggestion(panel, card, repo, number, s) {
     const verdictClass = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
@@ -281,6 +291,7 @@ function _renderSuggestion(panel, card, repo, number, s) {
             <div class="suggestion-summary">${_esc(s.summary)}</div>
             ${commentsHtml}
         </div>`;
+    // Card-scoped button reset
     Array.from(card.querySelectorAll('.suggest-review-btn')).filter(
         b => b.dataset.repo === repo && b.dataset.number === String(number)
     ).forEach(b => { b.disabled = false; b.textContent = 'refresh'; });
@@ -290,6 +301,7 @@ function _renderSuggestion(panel, card, repo, number, s) {
 
 function deleteSuggestion(repo, number) {
     const key = repo + '#' + number;
+    RM.cleanup(key); // stop any in-progress poll
     document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`).forEach(panel => {
         panel.style.display = 'none';
         const card = panel.closest('.card');
@@ -303,7 +315,6 @@ function deleteSuggestion(repo, number) {
 
 function showHistory(repo, number) {
     const key = repo + '#' + number;
-    // Find the panel in the closest context
     const panels = document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
     panels.forEach(panel => {
         const existing = panel.querySelector('.history-list');
@@ -313,15 +324,30 @@ function showHistory(repo, number) {
         .then(data => {
             const items = data.history || [];
             if (items.length <= 1) return;
-            let html = '<div class="history-list" style="border-top:1px solid var(--border);padding:8px 12px">';
-            html += `<div class="text-[10px] te-muted font-bold uppercase tracking-widest mb-2">${items.length} previous suggestions</div>`;
+            let html = '<div class="history-list" style="border-top:1px solid var(--border);padding:8px 12px;max-height:400px;overflow-y:auto">';
+            html += `<div class="text-[10px] te-muted font-bold uppercase tracking-widest mb-2">${items.length - 1} previous suggestion(s)</div>`;
             const past = items.slice(0, -1).reverse();
             for (const s of past) {
                 const vc = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
                 const vl = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
                 const ts = s.generated_at ? new Date(s.generated_at).toLocaleString() : '?';
-                html += `<div class="mb-3 pb-3" style="border-bottom:1px solid var(--border)"><div class="flex items-center gap-2 mb-1"><span class="verdict ${vc}" style="font-size:9px">${_esc(vl)}</span><span class="text-[10px] te-faint">${_esc(ts)}</span></div><div class="text-[11px] te-secondary">${_esc(s.summary)}</div>`;
-                if (s.comments && s.comments.length) html += `<div class="text-[10px] te-muted mt-1">${s.comments.length} comment(s)</div>`;
+                html += `<div class="mb-3 pb-3" style="border-bottom:1px solid var(--border)">`;
+                html += `<div class="flex items-center gap-2 mb-2"><span class="verdict ${vc}" style="font-size:9px">${_esc(vl)}</span><span class="text-[10px] te-faint">${_esc(ts)}</span><span class="text-[10px] te-muted">${s.comments ? s.comments.length : 0} comments</span></div>`;
+                html += `<div class="suggestion-summary text-[11px] te-secondary mb-2">${_esc(s.summary)}</div>`;
+                if (s.comments && s.comments.length) {
+                    html += '<div class="suggestion-comments">';
+                    for (const c of s.comments) {
+                        const sevClass = c.severity === 'critical' ? 'rc-critical' : c.severity === 'warning' ? 'rc-warning' : c.severity === 'nit' ? 'rc-nit' : 'rc-info';
+                        html += `<div class="review-comment ${sevClass}"><div class="rc-header">`;
+                        if (c.file) html += `<span class="rc-file" title="${_esc(c.file)}">${_esc(c.file)}${c.line ? ':' + c.line : ''}</span>`;
+                        html += `<span class="rc-severity rc-sev-${_esc(c.severity)}">${_esc(c.severity)}</span></div>`;
+                        html += `<div class="rc-body">${_esc(c.body)}</div>`;
+                        if (c.snippet) html += `<pre class="rc-snippet"><code>${_esc(c.snippet)}</code></pre>`;
+                        if (c.suggestion) html += `<div class="rc-suggestion-label">Suggested change:</div><pre class="rc-suggestion"><code>${_esc(c.suggestion)}</code></pre>`;
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
                 html += '</div>';
             }
             html += '</div>';
