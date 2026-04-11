@@ -373,7 +373,11 @@
         RM.activeReviews.forEach((job, key) => {
             if (job.state !== 'polling') return;
             if (RM.showProgress(key, job.repo, job.number)) {
+                job.missingSwaps = 0;
                 RM.startPoll(key, job.repo, job.number);
+            } else {
+                job.missingSwaps = (job.missingSwaps || 0) + 1;
+                if (job.missingSwaps >= 3) RM.cleanup(key);
             }
         });
 
@@ -393,6 +397,150 @@
             }
         });
     });
+
+    // --- Shared review functions (used by my_prs and review_requests partials) ---
+    function _esc(text) {
+        if (!text) return '';
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function suggestReview(btn) {
+        const repo = btn.dataset.repo;
+        const number = parseInt(btn.dataset.number);
+        const key = repo + '#' + number;
+
+        if (RM.isActive(key)) return;
+
+        RM.register(key, repo, number);
+        RM.showProgress(key, repo, number);
+
+        fetch('/api/review/suggest', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({repo, number})
+        }).then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const job = RM.activeReviews.get(key);
+            if (!job || job.state === 'done') return;
+            RM.markPolling(key);
+            RM.startPoll(key, repo, number);
+        }).catch(err => {
+            const job = RM.activeReviews.get(key);
+            if (!job || job.state === 'done') return;
+            const logs = job.cachedLogs.slice();
+            RM.cleanup(key);
+            RM.renderError(key, repo, number, 'Failed to start review \u2014 ' + err.message, logs);
+        });
+    }
+
+    function _renderSuggestion(panel, card, repo, number, s) {
+        const verdictClass = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
+        const verdictLabel = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
+        let commentsHtml = '';
+        if (s.comments && s.comments.length) {
+            commentsHtml = '<div class="suggestion-comments">';
+            for (const c of s.comments) {
+                const sevClass = c.severity === 'critical' ? 'rc-critical' : c.severity === 'warning' ? 'rc-warning' : c.severity === 'nit' ? 'rc-nit' : 'rc-info';
+                commentsHtml += `<div class="review-comment ${sevClass}"><div class="rc-header">`;
+                if (c.file) commentsHtml += `<span class="rc-file" title="${_esc(c.file)}">${_esc(c.file)}${c.line ? ':' + c.line : ''}</span>`;
+                commentsHtml += `<span class="rc-severity rc-sev-${c.severity}">${_esc(c.severity)}</span></div>`;
+                commentsHtml += `<div class="rc-body">${_esc(c.body)}</div>`;
+                if (c.snippet) commentsHtml += `<pre class="rc-snippet"><code>${_esc(c.snippet)}</code></pre>`;
+                if (c.suggestion) commentsHtml += `<div class="rc-suggestion-label">Suggested change:</div><pre class="rc-suggestion"><code>${_esc(c.suggestion)}</code></pre>`;
+                commentsHtml += '</div>';
+            }
+            commentsHtml += '</div>';
+        }
+        const nComments = s.comments ? s.comments.length : 0;
+        panel.innerHTML = `
+            <div class="suggestion-header" style="cursor:pointer" onclick="toggleSuggestion(this)">
+                <span class="collapse-icon te-faint text-xs w-3">\u2212</span>
+                <span class="suggestion-label">AI REVIEW</span>
+                <span class="verdict ${verdictClass}">${_esc(verdictLabel)}</span>
+                <span class="text-[10px] te-secondary">${nComments} comments</span>
+                <span class="flex-1"></span>
+                <span class="text-[10px] te-faint">just now</span>
+                <button class="btn text-[10px]" onclick="event.stopPropagation();showHistory('${repo}', ${number})">history</button>
+                <button class="btn text-[10px] suggest-review-btn" data-repo="${repo}" data-number="${number}" onclick="event.stopPropagation();suggestReview(this)">refresh</button>
+                <button class="btn btn-danger text-[10px]" onclick="event.stopPropagation();deleteSuggestion('${repo}', ${number})">delete</button>
+            </div>
+            <div class="suggestion-body">
+                <div class="suggestion-summary">${_esc(s.summary)}</div>
+                ${commentsHtml}
+            </div>`;
+        Array.from(card.querySelectorAll('.suggest-review-btn')).filter(
+            b => b.dataset.repo === repo && b.dataset.number === String(number)
+        ).forEach(b => { b.disabled = false; b.textContent = 'refresh'; });
+        const initBtn = card.querySelector('.suggest-review-btn:first-of-type');
+        if (initBtn && !panel.contains(initBtn)) initBtn.style.display = 'none';
+    }
+
+    // Listen for review:done custom event dispatched by RM.startPoll
+    document.addEventListener('review:done', function(e) {
+        const { repo, number, suggestion } = e.detail;
+        const panel = e.target;
+        const card = panel.closest('.card');
+        if (card) _renderSuggestion(panel, card, repo, number, suggestion);
+    });
+
+    function deleteSuggestion(repo, number) {
+        const key = repo + '#' + number;
+        RM.cleanup(key);
+        document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`).forEach(panel => {
+            panel.style.display = 'none';
+            const card = panel.closest('.card');
+            if (card) {
+                const btn = card.querySelector('.suggest-review-btn');
+                if (btn) { btn.style.display = ''; btn.disabled = false; btn.innerHTML = '<span aria-hidden="true">&#9672;</span> suggest review'; }
+            }
+        });
+        fetch('/api/review/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({repo, number}) });
+    }
+
+    function showHistory(repo, number) {
+        const key = repo + '#' + number;
+        const panels = document.querySelectorAll(`.suggestion-panel[data-key="${CSS.escape(key)}"]`);
+        panels.forEach(panel => {
+            const existing = panel.querySelector('.history-list');
+            if (existing) { existing.remove(); return; }
+            fetch(`/api/review/history?repo=${encodeURIComponent(repo)}&number=${number}`)
+            .then(r => r.json())
+            .then(data => {
+                const items = data.history || [];
+                if (items.length <= 1) return;
+                let html = '<div class="history-list" style="border-top:1px solid var(--border);padding:8px 12px;max-height:400px;overflow-y:auto">';
+                html += `<div class="text-[10px] te-muted font-bold uppercase tracking-widest mb-2">${items.length - 1} previous suggestion(s)</div>`;
+                const past = items.slice(0, -1).reverse();
+                for (const s of past) {
+                    const vc = s.verdict === 'approve' ? 'verdict-approve' : s.verdict === 'request_changes' ? 'verdict-changes' : 'verdict-comment';
+                    const vl = s.verdict === 'request_changes' ? 'request changes' : s.verdict;
+                    const ts = s.generated_at ? new Date(s.generated_at).toLocaleString() : '?';
+                    html += `<div class="mb-3 pb-3" style="border-bottom:1px solid var(--border)">`;
+                    html += `<div class="flex items-center gap-2 mb-2"><span class="verdict ${vc}" style="font-size:9px">${_esc(vl)}</span><span class="text-[10px] te-faint">${_esc(ts)}</span><span class="text-[10px] te-muted">${s.comments ? s.comments.length : 0} comments</span></div>`;
+                    html += `<div class="suggestion-summary text-[11px] te-secondary mb-2">${_esc(s.summary)}</div>`;
+                    if (s.comments && s.comments.length) {
+                        html += '<div class="suggestion-comments">';
+                        for (const c of s.comments) {
+                            const sevClass = c.severity === 'critical' ? 'rc-critical' : c.severity === 'warning' ? 'rc-warning' : c.severity === 'nit' ? 'rc-nit' : 'rc-info';
+                            html += `<div class="review-comment ${sevClass}"><div class="rc-header">`;
+                            if (c.file) html += `<span class="rc-file" title="${_esc(c.file)}">${_esc(c.file)}${c.line ? ':' + c.line : ''}</span>`;
+                            html += `<span class="rc-severity rc-sev-${_esc(c.severity)}">${_esc(c.severity)}</span></div>`;
+                            html += `<div class="rc-body">${_esc(c.body)}</div>`;
+                            if (c.snippet) html += `<pre class="rc-snippet"><code>${_esc(c.snippet)}</code></pre>`;
+                            if (c.suggestion) html += `<div class="rc-suggestion-label">Suggested change:</div><pre class="rc-suggestion"><code>${_esc(c.suggestion)}</code></pre>`;
+                            html += '</div>';
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+                panel.insertAdjacentHTML('beforeend', html);
+            });
+        });
+    }
     </script>
 </head>
 <body class="min-h-screen font-mono {% block body_class %}{% endblock %}" style="background:var(--bg);color:var(--text)">
